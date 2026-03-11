@@ -25,7 +25,7 @@ def upload_to_bigquery(df: pd.DataFrame,PROJECT: str,DATASET: str,TABLE: str, wr
     job.result()
 
     rows, cols = df.shape
-    return f'{TABLE}, {len(df):,} rows to {table_ref}'
+    return f'{TABLE}, {rows:,} rows and {cols} to {table_ref}'
 
 
 def load_from_bigquery(PROJECT: str, DATASET: str, TABLE: str):
@@ -35,7 +35,7 @@ def load_from_bigquery(PROJECT: str, DATASET: str, TABLE: str):
         DATASET: BigQuery dataset name
         TABLE: BigQuery table name
     Returns: pandas DataFrame '''
-    
+
     client = bigquery.Client(project=PROJECT)
     query = f'''
     SELECT *
@@ -43,6 +43,6 @@ def load_from_bigquery(PROJECT: str, DATASET: str, TABLE: str):
     '''
     df = client.query(query).to_dataframe()
     rows, cols = df.shape
-    print(f"Loaded {rows:,} rows and {cols} columns from {PROJECT}.{DATASET}.{TABLE}")
+    print(f'Loaded {rows:,} rows and {cols} columns from {PROJECT}.{DATASET}.{TABLE}')
 
     return df
