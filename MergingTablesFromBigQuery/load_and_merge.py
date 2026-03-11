@@ -17,6 +17,7 @@ query_job = client.query(query)
 result = query_job.result()
 AGBT_df = result.to_dataframe()
 
+
 #carbon
 PROJECT = "gridzero-489711"
 DATASET = "gridzero"
@@ -48,18 +49,27 @@ query_job = client.query(query)
 result = query_job.result()
 weather_data_df = result.to_dataframe()
 
+#Merge
+weather_AGBT_df = weather_data_df.merge(AGBT_df, left_on='time', right_on='StartTime', how='left')
+fully_merged_data = weather_AGBT_df.merge(carbon_intensity_df, left_on='time', right_on='timestamp', how='left')
 
-AGBT_weather_merged = AGBT_df.merge(weather_data_df, left_on='StartTime', right_on='time', how='inner')
-fully_merged_data = AGBT_weather_merged.merge(carbon_intensity_df, left_on='time', right_on='timestamp', how='inner')
+#Drop extra time columns - (think this could be done in the merge though..?)
+fully_merged_data.drop(columns='timestamp', inplace=True)
+fully_merged_data.drop(columns='StartTime', inplace=True)
 
-#MAKING CORRELATION HEATMAP
-import seaborn as sns
-import matplotlib.pyplot as plt
-ordered_data = fully_merged_data.sort_values('time')
-ordered_data.describe()
-correlation_matrix = fully_merged_data.corr()
-# Plot the heatmap
-plt.figure(figsize=(15, 15))
-sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f")
-plt.title('Correlation Matrix of the Dataset')
-plt.show()
+#Imputing strategy:
+
+#Upload to bq
+PROJECT = "gridzero-489711"
+DATASET = "merged_set"
+TABLE = "Fully_merged_dataset_2025"
+
+table = f"{PROJECT}.{DATASET}.{TABLE}"
+
+client = bigquery.Client()
+
+write_mode = "WRITE_TRUNCATE" # or "WRITE_APPEND"
+job_config = bigquery.LoadJobConfig(write_disposition=write_mode)
+
+job = client.load_table_from_dataframe(fully_merged_data, table, job_config=job_config)
+result = job.result()
