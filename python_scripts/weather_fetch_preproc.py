@@ -16,6 +16,7 @@ def fetch_weather(start_date, end_date, latitude=51.5, longitude=-0.1):
         'longitude': longitude,
         'start_date': start_date,
         'end_date': end_date,
+        'timezone': 'UTC',
         'hourly': [
             'temperature_2m',
             'wind_speed_100m',
@@ -25,10 +26,19 @@ def fetch_weather(start_date, end_date, latitude=51.5, longitude=-0.1):
             'direct_radiation',
             'diffuse_radiation',
             'pressure_msl',
-            'snowfall'
+            'snowfall',
+            'rain',
+            'precipitation'
         ]
     }
-    response = requests.get(url, params=selected_params).json()
+
+    response = requests.get(url, params=selected_params, timeout=30).json()
+    response.raise_for_status()
+    response = response.json
+
+    if "hourly" not in response:
+        raise ValueError(response)
+
     return pd.DataFrame(response["hourly"])
 
 
@@ -55,7 +65,9 @@ def weather_preproc(df):
         'direct_radiation': 'direct_radiation_wm2',
         'diffuse_radiation': 'diffuse_radiation_wm2',
         'pressure_msl': 'pressure_msl_hpa',
-        'snowfall': 'snowfall_cm'
+        'snowfall': 'snowfall_cm',
+        'rain': 'rain_mm',
+        'precipitation': 'precipitation_mm'
     })
 
     return df
