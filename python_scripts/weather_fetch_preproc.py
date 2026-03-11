@@ -36,6 +36,9 @@ def fetch_weather(start_date, end_date, latitude=51.5, longitude=-0.1):
     response.raise_for_status()
     response = response.json
 
+    if "hourly" not in response:
+        raise ValueError(response)
+
     return pd.DataFrame(response["hourly"])
 
 
