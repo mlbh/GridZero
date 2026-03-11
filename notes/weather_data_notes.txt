@@ -30,7 +30,9 @@ Notebooks:
         "global_tilted_irradiance",
         "terrestrial_radiation",
         "pressure_msl",
-        "snowfall"
+        "snowfall",
+        "rain",
+        "precipitation"
 
 About ERA5 spread variables:
 ERA5 - the reanalysis model, underpins Open-Meteo historical/archive API, data available from 1940.
@@ -55,10 +57,12 @@ wind:
 wind_speed_100m_ms — best for wind turbine output bc turbines operate at 80-150m not ground level
 wind_gusts_10m_ms — extreme wind events can cause turbine shutdown, affects generation
 
-temp and pressure:
+temp/pressure/rain:
 temperature_2m_c — drives electricity demand, cold = heating = more gas needed
 snowfall - as above (and literal sesonality), causes demand spikes bc cold/solar panel coverage/turbne icing = more gas
 pressure_msl_hpa — indicates weather system type, low pressure = storms = high wind, high pressure = calm = low wind and high solar in summer but cold in winter
+rain_mm - rain in mm
+precipitation_mm - anytype of water rain + other types snow/sleet/hail,  that precipitation > rain
 
 dropped params (9):
 wind_speed_10m_ms — superseded by 100m for energy modelling
