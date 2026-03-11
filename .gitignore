@@ -1,6 +1,7 @@
 raw_data/
 *.DS_Store
 *Zone.Identifier
+*.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
