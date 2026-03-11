@@ -57,12 +57,26 @@ def preprocess_carbon_intensity_data(df: pd.DataFrame) -> pd.DataFrame:
         "intensity.forecast": "forecast"
     })
 
-    df["datetime"] = pd.to_datetime(df["from"], utc=True)
+    df["datetime"] = pd.to_datetime(df["from"], utc=True, errors="coerce")
     df["datetime"] = df["datetime"].dt.tz_localize(None)
 
-    df = df.drop(columns=["forecast"], errors="ignore")
+    # Remove rows where datetime parsing failed
+    df = df.dropna(subset=["datetime"])
 
-    df = df.rename(columns={"actual": "carbon_intensity/gCO2/kWh"})
+    # Check that a usable intensity column exists
+    if "actual" not in df.columns and "forecast" not in df.columns:
+        raise ValueError(
+            "API response missing both 'intensity.actual' and 'intensity.forecast'"
+        )
+
+    # Carbon Intensity API may return null actual values, so fallback to forecast
+    if "actual" in df.columns:
+        df["carbon_intensity/gCO2/kWh"] = df["actual"]
+
+        if "forecast" in df.columns:
+            df["carbon_intensity/gCO2/kWh"] = df["carbon_intensity/gCO2/kWh"].fillna(df["forecast"])
+    else:
+        df["carbon_intensity/gCO2/kWh"] = df["forecast"]
 
     df = df[["datetime", "carbon_intensity/gCO2/kWh"]]
 
