@@ -1,5 +1,4 @@
 # imports required
-from google.cloud import bigquery
 import pandas as pd
 import requests
 
@@ -32,14 +31,17 @@ def fetch_weather(start_date, end_date, latitude=51.5, longitude=-0.1):
         ]
     }
 
-    response = requests.get(url, params=selected_params, timeout=30).json()
+    response = requests.get(url, params=selected_params, timeout=30)
     response.raise_for_status()
-    response = response.json
 
-    if "hourly" not in response:
-        raise ValueError(response)
+    data = response.json()
 
-    return pd.DataFrame(response["hourly"])
+    if "hourly" not in data:
+        raise ValueError(f"Unexpected API response:{data}")
+
+    df = pd.DataFrame(data["hourly"])
+
+    return df
 
 
 def weather_preproc(df):
