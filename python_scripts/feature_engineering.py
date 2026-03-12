@@ -1,7 +1,7 @@
 import pandas as pd
 
 
-def engineer_features(df, target_col="carbon_intensity__gCO2_kWh", add_year_lag=False):
+def engineer_features(df, target_col="carbon_intensity", add_year_lag=False):
     """
     Create lag and calendar features for modelling.
 
@@ -44,7 +44,7 @@ def engineer_features(df, target_col="carbon_intensity__gCO2_kWh", add_year_lag=
     # Optional yearly lag
     # 17520 half-hour periods = 365 days
     if add_year_lag:
-        df["lag_336"] = df[target_col].shift(17520)
+        df["lag_17520"] = df[target_col].shift(17520)
 
     # Calendar features
     df["hour"] = df["datetime"].dt.hour
