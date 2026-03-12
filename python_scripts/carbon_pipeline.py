@@ -61,10 +61,13 @@ def preprocess_carbon_intensity_data(df: pd.DataFrame) -> pd.DataFrame:
 
     df["timestamp"] = pd.to_datetime(df["from"], utc=True).dt.tz_convert(None)
     df = df.rename(columns={
-        "intensity.actual": "carbon_intensity_gCO2_kWh",  # ← rename directly, skip intermediate
+        "intensity.actual": "actual",
         "intensity.forecast": "forecast"
     })
-    df["carbon_intensity_gCO2_kWh"] = pd.to_numeric(df["carbon_intensity_gCO2_kWh"], errors='coerce')
+    df["carbon_intensity_gCO2_kWh"] = pd.to_numeric(df["actual"], errors='coerce')
+    df["carbon_intensity_gCO2_kWh"] = df["carbon_intensity_gCO2_kWh"].fillna(
+        pd.to_numeric(df["forecast"], errors='coerce')
+    )
     df = df[["timestamp", "carbon_intensity_gCO2_kWh"]]
 
     df = (
