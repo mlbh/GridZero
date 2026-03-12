@@ -47,7 +47,6 @@ def fetch_exelon(start_date, end_date):
                     "quantity":         item["quantity"]
                 })
 
-        print(f"Fetched: {params['from']} → {params['to']}")
         chunk_start = chunk_end + timedelta(days=1)
 
     df = pd.DataFrame(all_records)
