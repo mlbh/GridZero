@@ -89,6 +89,7 @@ def impute_values(df):
 
 #TEST
 df = API_and_merge('2017-09-12','2026-03-12')
+df['status'] = df['Nuclear'].apply(lambda x: 'zeros' if x == 0 else 'okay')
 # df1 = impute_values(df)
 
 
