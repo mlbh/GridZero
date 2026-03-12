@@ -18,17 +18,9 @@ def API_and_merge(start_date: str, end_date: str):
     carbon_df = load_carbon_intensity_data(start_date, end_date)
     carbon_df = preprocess_carbon_intensity_data(carbon_df)
 
-    carbon_df = load_carbon_intensity_data('2023-01-01', '2023-02-01')
-    print(carbon_df.columns.tolist())
-    print(carbon_df.head())
-
     # Load and process weather data
     weather_df = fetch_weather(start_date, end_date, latitude=51.5, longitude=-0.1)
     weather_df = weather_preproc(weather_df)
-
-    print(weather_df.columns.tolist())
-    print(exelon_df.index.dtype)
-    print(carbon_df['timestamp'].dtype)
 
     df = (
         weather_df
@@ -59,9 +51,8 @@ def impute_values(df):
 
     # Most sources
     linear_sources = ['Biomass', 'Fossil Gas', 'Nuclear', 'Other',
-                    'Hydro Run-of-river and poundage', 'Hydro Pumped Storage',
                     'Fossil Hard coal', 'Fossil Oil'
-                    ]
+                        ]
 
     df[linear_sources] = df[linear_sources].interpolate(method='linear')
     #hydro sources to be moved out once precipitation becomes a feature
@@ -74,10 +65,10 @@ def impute_values(df):
                     'wind_speed_100m_ms', 'wind_gusts_10m_ms', 'hour', 'month']
 
     #FOR WHEN PRECIPITATION IS A FEATURE
-    # hydro_features = ['Hydro Pumped Storage', 'Hydro Run-of-river and poundage',
-    #                   'month', *'Other'*, *'precipitation_mm'*]
-    # imputer = KNNImputer(n_neighbors=5)
-    # merged[hydro_features] = imputer.fit_transform(merged[hydro_features])
+    hydro_features = ['Hydro Pumped Storage', 'Hydro Run-of-river and poundage',
+                      'month', 'Other', 'precipitation_mm']
+    imputer = KNNImputer(n_neighbors=5)
+    df[hydro_features] = imputer.fit_transform(df[hydro_features])
 
 
     for features in [solar_features, wind_features]:
@@ -93,20 +84,18 @@ def impute_values(df):
 
     return df
 
-exelon_df = fetch_exelon('2017-01-01', '2017-02-02')
-print(exelon_df.columns.tolist())
-print(exelon_df.head())
-
 
 
 
 #TEST
-df = API_and_merge('2023-01-01','2023-02-01')
+df = API_and_merge('2017-09-12','2026-03-12')
+# df1 = impute_values(df)
+
 
 #Upload to bq
 PROJECT = "gridzero-489711"
 DATASET = "merged_set"
-TABLE = "test_merge_no_sauce"
+TABLE = "test_merge_2017_onward_raw"
 
 table = f"{PROJECT}.{DATASET}.{TABLE}"
 
