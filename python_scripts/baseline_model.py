@@ -14,7 +14,7 @@ from feature_engineering import engineer_features, drop_lag_nulls, validate_feat
 # imports Daniels feature_engineering to engineer cols if not present
 # py scripts listed in from/imports
 # drop datetime later in model step, not here
-def baseline_preproc(
+def xgb_train_preproc(
     df: pd.DataFrame,
     target_col: str = 'carbon_intensity_gCO2_kWh',
     add_year_lag: bool =False
@@ -77,7 +77,7 @@ def baseline_model_xgb(
     df = df.rename(columns={'time' : 'datetime'})
 
     # preproc if applicable
-    df = baseline_preproc(df, target_col=target_col)
+    df = xgb_train_preproc(df, target_col=target_col)
 
     # drop lag null rows
     lag_cols = [col for col in ['lag_48', 'lag_336', 'lag_17520'] if col in df.columns]
@@ -114,7 +114,7 @@ def baseline_model_xgb(
     return model, X.columns.tolist()
 
 # preping prediction features to be used with frontend
-# will need to be modified based on what is pased in frontend wise
+# Not needed atm but might be needed if new stream of data added
 def prepare_prediction_features(
                         df_new: pd.DataFrame,
                         feature_cols: list,
@@ -172,112 +172,8 @@ def evaluate_model(model, X_test, y_test) -> dict:
         'r2_mean': cv_results['test_r2'].mean(),
         'max_err_max': -cv_results['test_max_err'].max(),
     }
-# Usefule codes
-#---------------------------------------------------------------------------------------
-# model comparison code
-models = {
-    'dummy': make_pipeline(
-        DummyRegressor(strategy='mean')
-    ),
-    'linear_regression': make_pipeline(
-        StandardScaler(),
-        LinearRegression()
-    ),
-    'random_forest': make_pipeline(
-        RandomForestRegressor(
-            n_estimators=100,
-            random_state=42
-        )
-    ),
-    'xgboost_default': make_pipeline(
-            XGBRegressor()
-    ),
 
-    'xgboost': make_pipeline(
-        XGBRegressor(
-            n_estimators=100,
-            learning_rate=0.1,
-            max_depth=6,
-            random_state=42,
-            objective='reg:squarederror'
-        )
-    ),
-    'xgboost_scl': make_pipeline(
-        StandardScaler(),
-        XGBRegressor(
-            n_estimators=100,
-            learning_rate=0.1,
-            max_depth=6,
-            random_state=42
-        )
-    ),
-    'xgboost_opt' : make_pipeline(
-        XGBRegressor(
-            n_estimators=500,
-            learning_rate=0.03,
-            max_depth=5,
-            #L1
-            reg_alpha=0.1,
-            #L2
-            reg_lambda=0,
-            # histo method (faster than default greedy algo)
-            tree_method='hist',
-            random_state=42
-        )
-    ),
 
-    'xgboost_opt_scl' : make_pipeline(
-        StandardScaler(),
-        XGBRegressor(
-            n_estimators=500,
-            learning_rate=0.03,
-            max_depth=5,
-            reg_alpha=0.1,
-            reg_lambda=1.0,
-            tree_method='hist',
-            random_state=42
-        )
-
-    )
-}
-
-# scoring
-scoring = {
-    'mae': 'neg_mean_absolute_error',
-    'rmse': 'neg_root_mean_squared_error',
-    'r2': 'r2',
-    'max_err':'neg_max_error'
-}
-
-# loop through models
-# results
-results = []
-
-for model_name, pipeline in models.items():
-    cv_results = cross_validate(
-        pipeline,
-        X_train,
-        y_train,
-        cv=5,
-        scoring=scoring,
-        return_train_score=False
-    )
-
-# eval metrics selected and named
-    model_results = {
-        'model': model_name,
-        'model_fit_t': cv_results['fit_time'].mean(),
-        'mae_mean': -cv_results['test_mae'].mean(),
-        'rmse_mean': -cv_results['test_rmse'].mean(),
-        'r2_mean': cv_results['test_r2'].mean(),
-        'max_err_max': -cv_results['test_max_err'].max(),
-    }
-    results.append(model_results)
-
-# comparison table with names
-results_df = pd.DataFrame(results)
-results_df = results_df.sort_values('mae_mean')
-display(results_df)
 
 # BBoujie af LLM CHECK to help debugging
 # tables = ['test_merge_2017_onward_raw', 'test_merge_with_the_sauce']
