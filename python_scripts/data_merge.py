@@ -6,7 +6,7 @@ from carbon_pipeline import load_carbon_intensity_data, preprocess_carbon_intens
 from exelonAGBT_fetch_preproc import fetch_exelon, exelon_preproc
 from weather_fetch_preproc import fetch_weather, weather_preproc
 
-    #Merge
+
 
 
 def API_and_merge(start_date: str, end_date: str):
