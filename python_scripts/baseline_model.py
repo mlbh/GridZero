@@ -1,7 +1,7 @@
 import pandas as pd
 from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, mean_absolute_error, max_error
 from xgboost import XGBRegressor
 from sklearn.preprocessing import StandardScaler
 
@@ -9,19 +9,28 @@ from sklearn.preprocessing import StandardScaler
 from data_to_bigquery import load_from_bigquery
 from feature_engineering import engineer_features, drop_lag_nulls, validate_features
 
-# preproc that runs if features need to be engineered
-def baseline_preproc(df, target_col='carbon_intensity', add_year_lag=False):
+
+# baseline_preproc fucntion that runs if features need to be engineered
+# imports Daniels feature_engineering to engineer cols if not present
+# py scripts listed in from/imports
+# drop datetime later in model step, not here
+def baseline_preproc(
+    df: pd.DataFrame,
+    target_col: str = 'carbon_intensity_gCO2_kWh',
+    add_year_lag: bool =False
+    ) -> pd.DataFrame:
     '''
-    Apply feature engineering only if engineered columns are missing.
-    Drop lag-created nulls if lag columns are present.
+    Apply feature engineering ONLY if engineered columns are missing.
+    Otherwise return df unchanged (except optional 'time' to 'datetime' rename).
     '''
 
     df = df.copy()
 
-    # rename time column if needed
+    # ensure datetime col name if needed
     if 'time' in df.columns and 'datetime' not in df.columns:
         df = df.rename(columns={'time': 'datetime'})
 
+     # engineer features only if missing
     required_features = [
         'lag_48',
         'lag_336',
@@ -34,62 +43,115 @@ def baseline_preproc(df, target_col='carbon_intensity', add_year_lag=False):
     if add_year_lag:
         required_features.append('lag_17520')
 
-    # only engineer features if they are missing
-    missing_features = [col for col in required_features if col not in df.columns]
-
-    if missing_features:
+    # only engineer features if ANY required features missing
+    if not all(col in df.columns for col in required_features):
         df = engineer_features(df, target_col=target_col, add_year_lag=add_year_lag)
 
-    # drop nulls only if lag columns exist
-    lag_cols = [col for col in ['lag_48', 'lag_336', 'lag_17520'] if col in df.columns]
+    # # drop rows where target missing
+    # df = df.dropna(subset=[target_col])
 
-    if lag_cols:
-        df = df.dropna(subset=lag_cols).reset_index(drop=True)
+    # # drop lag null rows
+    # lag_cols = [col for col in ['lag_48', 'lag_336', 'lag_17520'] if col in df.columns]
+    # if lag_cols:
+    #     df = df.dropna(subset=lag_cols)
+
+    # simple drop null to make sure can parse saucey tables and raw tables
+    df = df.dropna()
 
     return df
 
+# Function to predict with baseline model simple/non-temporal split
+# imports load_from bigquery fucntion to load df
+def baseline_model_xgb(
+                        PROJECT: str='gridzero-489711',
+                        DATASET: str='merged_set',
+                        TABLE: str='test_merge_2017_onward_raw',
+                        target_col='carbon_intensity_gCO2_kWh',
+                        test_size:int = 0.3
+                        ) -> XGBRegressor:
 
-    # Function to predict with baseline model simple split
-def baseline_model_xgb(PROJECT: str='gridzero-489711',
-                    DATASET: str='merged_set',
-                    TABLE: str='Fully_merged_dataset_2025',
-                    test_size:int = 0.3
-                    ):
-
-    # pull df from BQ
+    # load df from BQ
     df = load_from_bigquery(PROJECT=PROJECT, DATASET=DATASET, TABLE=TABLE)
 
     # rename if col 'time' is present
     df = df.rename(columns={'time' : 'datetime'})
 
-    # # engineer the features
-    # df = engineer_features(df, target_col='carbon_intensity')
-    # df = baseline_preproc(df)
-
-    # #print checks
-    # validate_features(df)
-    # df = drop_lag_nulls(df)
-
     # preproc if applicable
-    df = baseline_preproc(df)
+    df = baseline_preproc(df, target_col=target_col)
 
-    # set features and target variables
-    X = df.drop(columns=['carbon_intensity', 'datetime'])
-    y = df['carbon_intensity']
+    # drop lag null rows
+    lag_cols = [col for col in ['lag_48', 'lag_336', 'lag_17520'] if col in df.columns]
+    if lag_cols:
+        df = df.dropna(subset=lag_cols)
+
+    # define features and target
+    X = df.drop(columns=[target_col, 'datetime'], errors='ignore').copy()
+    # drop all non-numeric cols
+    X = X.select_dtypes(include='number')
+
+    ''' Debugging line, uncomment if errores relating to dtypes'''
+    # print("NON NUMERIC:", X.select_dtypes(exclude='number').columns.tolist())
+
+    # converting from Int64 (if applicable)so can also use the sauncey merged data tables
+    X = X.astype(float)
+
+    y = df[target_col]
 
     # test train split for single year
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size)
+    X_train, X_test, y_train, y_test = train_test_split(
+                                        X,
+                                        y,
+                                        test_size=test_size,
+                                        random_state=42
+                                        )
 
     # build simple xgb bood model
-    pipeline = make_pipeline(
-                    StandardScaler(),
-                    XGBRegressor()
-                 )
+    model = XGBRegressor(random_state=42)
 
     # training model
-    pipeline.fit(X_train, y_train)
+    model.fit(X_train, y_train)
 
-    return pipeline
+    return model, X.columns.tolist()
+
+# preping prediction features to be used with frontend
+# will need to be modified based on what is pased in frontend wise
+def prepare_prediction_features(
+                        df_new: pd.DataFrame,
+                        feature_cols: list,
+                        target_col: str='carbon_intensity_gCO2_kWh'
+                    ) -> pd.DataFrame:
+
+    # rename if col 'time' is present
+    df_new = df_new.rename(columns={'time': 'datetime'}).copy()
+    df_new = baseline_preproc(df_new, target_col=target_col)
+
+    X_new = df_new.drop(columns=[target_col, 'datetime'], errors='ignore').copy()
+    X_new = X_new.select_dtypes(include='number')
+    X_new = X_new.astype(float)
+
+    # keep only training columns
+    X_new = X_new.reindex(columns=feature_cols, fill_value=0)
+
+    return X_new
+
+
+def make_prediction(
+            model,
+            df_new: pd.DataFrame,
+            feature_cols: list,
+            target_col: str='carbon_intensity_gCO2_kWh'
+        ):
+
+# calls fancy frontend function
+    X_new = prepare_prediction_features(
+    df_new=df_new,
+    feature_cols=feature_cols,
+    target_col=target_col
+)
+
+    y_pred = model.predict(X_new)
+
+    return y_pred
 
 
 #the idea was to end up with something like this...
@@ -99,58 +161,154 @@ def make_prediction(X_new):
     y_pred = baseline_model.predict(X_new)
     return y_pred
 
+def evaluate_model(model, X_test, y_test) -> dict:
+    y_pred = model.predict(X_test)
 
+    return {
+        'model': model_name,
+        'model_fit_t': cv_results['fit_time'].mean(),
+        'mae_mean': -cv_results['test_mae'].mean(),
+        'rmse_mean': -cv_results['test_rmse'].mean(),
+        'r2_mean': cv_results['test_r2'].mean(),
+        'max_err_max': -cv_results['test_max_err'].max(),
+    }
+# Usefule codes
+#---------------------------------------------------------------------------------------
+# model comparison code
+models = {
+    'dummy': make_pipeline(
+        DummyRegressor(strategy='mean')
+    ),
+    'linear_regression': make_pipeline(
+        StandardScaler(),
+        LinearRegression()
+    ),
+    'random_forest': make_pipeline(
+        RandomForestRegressor(
+            n_estimators=100,
+            random_state=42
+        )
+    ),
+    'xgboost_default': make_pipeline(
+            XGBRegressor()
+    ),
 
-# daniels feature engineering function below, updating the correct col
-def engineer_features(df, target_col="carbon_intensity_gCO2_kWh", add_year_lag=False):
-    """
-    Create lag and calendar features for modelling.
+    'xgboost': make_pipeline(
+        XGBRegressor(
+            n_estimators=100,
+            learning_rate=0.1,
+            max_depth=6,
+            random_state=42,
+            objective='reg:squarederror'
+        )
+    ),
+    'xgboost_scl': make_pipeline(
+        StandardScaler(),
+        XGBRegressor(
+            n_estimators=100,
+            learning_rate=0.1,
+            max_depth=6,
+            random_state=42
+        )
+    ),
+    'xgboost_opt' : make_pipeline(
+        XGBRegressor(
+            n_estimators=500,
+            learning_rate=0.03,
+            max_depth=5,
+            #L1
+            reg_alpha=0.1,
+            #L2
+            reg_lambda=0,
+            # histo method (faster than default greedy algo)
+            tree_method='hist',
+            random_state=42
+        )
+    ),
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input dataframe containing a datetime column and target column.
+    'xgboost_opt_scl' : make_pipeline(
+        StandardScaler(),
+        XGBRegressor(
+            n_estimators=500,
+            learning_rate=0.03,
+            max_depth=5,
+            reg_alpha=0.1,
+            reg_lambda=1.0,
+            tree_method='hist',
+            random_state=42
+        )
 
-    target_col : str, default="carbon_intensity"
-        Name of the target column to create lag features from.
+    )
+}
 
-    add_year_lag : bool, default=False
-        Whether to add a 1-year lag feature.
-        Only use this if the dataframe contains at least 2 years of half-hourly data.
+# scoring
+scoring = {
+    'mae': 'neg_mean_absolute_error',
+    'rmse': 'neg_root_mean_squared_error',
+    'r2': 'r2',
+    'max_err':'neg_max_error'
+}
 
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with engineered lag and calendar features.
-    """
+# loop through models
+# results
+results = []
 
-    df = df.copy()
+for model_name, pipeline in models.items():
+    cv_results = cross_validate(
+        pipeline,
+        X_train,
+        y_train,
+        cv=5,
+        scoring=scoring,
+        return_train_score=False
+    )
 
-    # Ensure datetime is in datetime format
-    df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce")
+# eval metrics selected and named
+    model_results = {
+        'model': model_name,
+        'model_fit_t': cv_results['fit_time'].mean(),
+        'mae_mean': -cv_results['test_mae'].mean(),
+        'rmse_mean': -cv_results['test_rmse'].mean(),
+        'r2_mean': cv_results['test_r2'].mean(),
+        'max_err_max': -cv_results['test_max_err'].max(),
+    }
+    results.append(model_results)
 
-    # Drop rows with invalid datetime values
-    df = df.dropna(subset=["datetime"])
+# comparison table with names
+results_df = pd.DataFrame(results)
+results_df = results_df.sort_values('mae_mean')
+display(results_df)
 
-    # Sort by datetime
-    df = df.sort_values("datetime").reset_index(drop=True)
+# BBoujie af LLM CHECK to help debugging
+# tables = ['test_merge_2017_onward_raw', 'test_merge_with_the_sauce']
 
-    # Lag features
-    # 48 half-hour periods = 24 hours
-    df["lag_48"] = df[target_col].shift(48)
+# for table in tables:
+#     print(f"\n--- TESTING PREPROC: {table} ---")
 
-    # 336 half-hour periods = 7 days
-    df["lag_336"] = df[target_col].shift(336)
+#     df = load_from_bigquery(
+#         PROJECT='gridzero-489711',
+#         DATASET='merged_set',
+#         TABLE=table
+#     )
 
-    # Optional yearly lag
-    # 17520 half-hour periods = 365 days
-    if add_year_lag:
-        df["lag_336"] = df[target_col].shift(17520)
+#     df_pre = baseline_preproc(df)
 
-    # Calendar features
-    df["hour"] = df["datetime"].dt.hour
-    df["day_of_week"] = df["datetime"].dt.dayofweek
-    df["month"] = df["datetime"].dt.month
-    df["is_weekend"] = (df["day_of_week"] >= 5).astype(int)
+#     print("raw shape:", df.shape)
+#     print("preproc shape:", df_pre.shape)
+#     print("columns after preproc:", df_pre.columns.tolist())
 
-    return df
+#     target_candidates = [c for c in df_pre.columns if 'carbon_intensity' in c]
+#     print("target candidates:", target_candidates)
+
+#     if target_candidates:
+#         target_col = target_candidates[0]
+#         print("target NA count:", df_pre[target_col].isna().sum())
+
+#     lag_cols = [c for c in ['lag_48', 'lag_336', 'lag_17520'] if c in df_pre.columns]
+#     print("lag cols present:", lag_cols)
+
+#     if lag_cols:
+#         print("lag NA counts:")
+#         print(df_pre[lag_cols].isna().sum())
+
+#     print("total NA count in preproc df:", df_pre.isna().sum().sum())
