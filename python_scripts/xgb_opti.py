@@ -56,17 +56,17 @@ def xgb_train_preproc(
 # imports load_from bigquery fucntion to load df
 # outputs: model, X_train, X_test, y_train, y_test = baseline_model_
 def opti_model_xgb(
-                        PROJECT: str='gridzero-489711',
-                        DATASET: str='merged_set',
-                        TABLE: str='test_merge_2017_onward_raw',
-                        target_col='carbon_intensity_gCO2_kWh',
-                        test_size:int = 0.3
-                        ) -> tuple[XGBRegressor,
-                                   pd.DataFrame,
-                                   pd.DataFrame,
-                                   pd.DataFrame,
-                                   pd.DataFrame,
-                                   ]:
+                PROJECT: str='gridzero-489711',
+                DATASET: str='merged_set',
+                TABLE: str='test_merge_2017_onward_raw',
+                target_col='carbon_intensity_gCO2_kWh',
+                test_size:int = 0.3
+                ) -> tuple[XGBRegressor,
+                            pd.DataFrame,
+                            pd.DataFrame,
+                            pd.DataFrame,
+                            pd.DataFrame,
+                            ]:
 
     # load df from BQ
     df = load_from_bigquery(PROJECT=PROJECT, DATASET=DATASET, TABLE=TABLE)
