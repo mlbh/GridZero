@@ -4,7 +4,7 @@ import requests
 
 import pandas as pd
 
-def fetch_forecast(latitude=51.5 , longitude=-0.1, forecast_days=16):
+def fetch_forecast(latitude=51.5 , longitude=-0.1, forecast_days=1):
 
 #forecast days can be 1, 3, 7, 14, 16
 
@@ -43,6 +43,8 @@ def weather_preproc_no_fill(df):
     # datetime and set index
     df['time'] = pd.to_datetime(df['time'])
     df = df.set_index('time')
+
+    df['wind_speed_100m'] =  (df['wind_speed_120m'] + df['wind_speed_80m'])/2
 
     # rename columns w/ units
     df = df.rename(columns={
