@@ -1,7 +1,7 @@
 # Requirements contents:
 # 1 - minimal envrioment installed
 # 2 - libraries installed from minimum envrioment
-# 3 - addtional libraries installed 
+# 3 - addtional libraries installed
 #
 
 # 1 - initial minimial environment:
@@ -147,3 +147,6 @@ google-resumable-media==2.8.0
 googleapis-common-protos==1.73.0
 grpcio==1.78.0
 grpcio-status==1.78.0
+
+# XGBOOST
+xgboost==3.2.0

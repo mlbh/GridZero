@@ -29,7 +29,13 @@ def load_carbon_intensity_data(start_date: str, end_date: str) -> pd.DataFrame:
         response = requests.get(url, timeout=30)
         response.raise_for_status()
 
-        data = response.json().get("data", [])
+        try:
+            payload = response.json()
+        except ValueError:
+            print(f"Warning: Carbon API returned non-JSON response for {current} - {next_date}")
+            payload = {}
+
+        data = payload.get("data", []) if isinstance(payload, dict) else []
 
         if data:
             dfs.append(pd.json_normalize(data))
@@ -42,48 +48,32 @@ def load_carbon_intensity_data(start_date: str, end_date: str) -> pd.DataFrame:
     return pd.concat(dfs, ignore_index=True)
 
 
+
 def preprocess_carbon_intensity_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Clean and preprocess Carbon Intensity API dataframe.
     """
 
     if df.empty:
-        return pd.DataFrame(columns=["datetime", "carbon_intensity/gCO2/kWh"])
+        return pd.DataFrame(columns=["timestamp", "carbon_intensity_gCO2_kWh"])
 
     df = df.copy()
 
+    df["timestamp"] = pd.to_datetime(df["from"], utc=True).dt.tz_convert(None)
     df = df.rename(columns={
         "intensity.actual": "actual",
         "intensity.forecast": "forecast"
     })
-
-    df["datetime"] = pd.to_datetime(df["from"], utc=True, errors="coerce")
-    df["datetime"] = df["datetime"].dt.tz_localize(None)
-
-    # Remove rows where datetime parsing failed
-    df = df.dropna(subset=["datetime"])
-
-    # Check that a usable intensity column exists
-    if "actual" not in df.columns and "forecast" not in df.columns:
-        raise ValueError(
-            "API response missing both 'intensity.actual' and 'intensity.forecast'"
-        )
-
-    # Carbon Intensity API may return null actual values, so fallback to forecast
-    if "actual" in df.columns:
-        df["carbon_intensity/gCO2/kWh"] = df["actual"]
-
-        if "forecast" in df.columns:
-            df["carbon_intensity/gCO2/kWh"] = df["carbon_intensity/gCO2/kWh"].fillna(df["forecast"])
-    else:
-        df["carbon_intensity/gCO2/kWh"] = df["forecast"]
-
-    df = df[["datetime", "carbon_intensity/gCO2/kWh"]]
+    df["carbon_intensity_gCO2_kWh"] = pd.to_numeric(df["actual"], errors='coerce')
+    df["carbon_intensity_gCO2_kWh"] = df["carbon_intensity_gCO2_kWh"].fillna(
+        pd.to_numeric(df["forecast"], errors='coerce')
+    )
+    df = df[["timestamp", "carbon_intensity_gCO2_kWh"]]
 
     df = (
         df
-        .sort_values("datetime")
-        .drop_duplicates(subset="datetime")
+        .sort_values("timestamp")
+        .drop_duplicates(subset="timestamp")
         .reset_index(drop=True)
     )
 
