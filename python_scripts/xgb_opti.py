@@ -73,6 +73,9 @@ def opti_model_xgb(
 
     # rename if col 'time' is present
     df = df.rename(columns={'time' : 'datetime'})
+    
+    if 'datetime' not in df.columns:
+        raise ValueError('datetime column is required for temporal split and plotting')
 
     # preproc if applicable
     df = xgb_train_preproc(df, target_col=target_col)
