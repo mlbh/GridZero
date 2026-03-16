@@ -2,9 +2,9 @@ import numpy as np
 import pandas as pd
 from sklearn.impute import KNNImputer
 from google.cloud import bigquery
-from carbon_pipeline import load_carbon_intensity_data, preprocess_carbon_intensity_data
-from exelonAGBT_fetch_preproc import fetch_exelon, exelon_preproc
-from weather_fetch_preproc import fetch_weather, weather_preproc
+from python_scripts.full_data_pipeline.carbon_pipeline import load_carbon_intensity_data, preprocess_carbon_intensity_data
+from python_scripts.full_data_pipeline.exelonAGBT_fetch_preproc import fetch_exelon, exelon_preproc
+from python_scripts.full_data_pipeline.weather_fetch_preproc import fetch_weather, weather_preproc
 
 
 
