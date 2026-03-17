@@ -1,10 +1,13 @@
 import requests
 import pandas as pd
+import numpy as np
 
 
-def fetch_forecast(latitude=51.5, longitude=-0.1, forecast_days=1):
+def fetch_forecast(latitude=51.5, longitude=-0.1):#target_date
 
     url = "https://api.open-meteo.com/v1/forecast"
+
+    #start_str = target_date.strftime("%Y-%m-%d") if hasattr(target_date, 'strftime') else target_date
 
     hourly_vars = [
         "temperature_2m",
@@ -20,11 +23,14 @@ def fetch_forecast(latitude=51.5, longitude=-0.1, forecast_days=1):
     ]
 
     params = {
-        "latitude": latitude,
-        "longitude": longitude,
+        "latitude": 51.5,
+        "longitude": -0.1,
         "hourly": ",".join(hourly_vars),
         "timezone": "GMT",
-        "forecast_days": forecast_days,
+        "past_days": 7, #HISTORIC DATA - MAYBE USE THE TRAINED SET ALTERNATIVELY?
+        "forecast_days": 14,
+        #"start_date": start_str,
+        #"end_date": start_str,
         "wind_speed_unit": "ms",
     }
 
@@ -45,15 +51,23 @@ def weather_preproc(df):
 
     df = df.copy()
 
-    df["time"] = pd.to_datetime(df["time"])
-    df = df.set_index("time")
+    if not isinstance(df.index, pd.DatetimeIndex):
+        df["time"] = pd.to_datetime(df["time"])
+        df = df.set_index("time")
 
-    df['wind_speed_100m'] =  (df['wind_speed_120m'] + df['wind_speed_80m'])/2
+    df = df.resample('30min').ffill()
+
+    cols = df.columns
+
+    if 'wind_speed_120m' in cols and 'wind_speed_80m' in cols:
+            df['wind_speed_100m'] = (df['wind_speed_120m'] + df['wind_speed_80m']) / 2
+    else:
+            # If they are missing, lets see why
+            raise KeyError(f"Calculated columns missing. Available: {list(cols)}")
 
     rename_map = {
         "temperature_2m": "temperature_2m_c",
-        "wind_speed_120m": "wind_speed_120m_ms",
-        "wind_speed_80m": "wind_speed_80m_ms",
+        "wind_speed_100m": "wind_speed_100m_ms",
         "wind_gusts_10m": "wind_gusts_10m_ms",
         "cloud_cover": "cloud_cover_pct",
         "shortwave_radiation": "shortwave_radiation_wm2",
@@ -62,7 +76,46 @@ def weather_preproc(df):
         "pressure_msl": "pressure_msl_hpa",
         "precipitation": "precipitation_mm",
     }
-
     df = df.rename(columns=rename_map)
 
-    return df
+    # Hour
+    #MAYBE DELETE
+    total_hours = df.index.hour + df.index.minute / 60
+    df['hour_sin'] = np.sin(2 * np.pi * total_hours / 24)
+    df['hour_cos'] = np.cos(2 * np.pi * total_hours / 24)
+    # Day of Week
+    df['dow_sin'] = np.sin(2 * np.pi * df.index.dayofweek / 7)
+    df['dow_cos'] = np.cos(2 * np.pi * df.index.dayofweek / 7)
+    # Day of Year
+    df['doy_sin'] = np.sin(2 * np.pi * df.index.dayofyear / 365.25)
+    df['doy_cos'] = np.cos(2 * np.pi * df.index.dayofyear / 365.25)
+
+    #Grid Generation Features
+    # CRITICAL: If you don't have a live feed for these, you must
+    # fill them with 0.0 or a 'typical' value so the shape matches.
+    gen_columns = [
+        'biomass', 'fossil_gas', 'fossil_hard_coal', 'hydro_pumped_storage',
+        'hydro_run_of_river_and_poundage', 'nuclear', 'other', 'solar',
+        'wind_offshore', 'wind_onshore'
+    ]
+    for col in gen_columns:
+        if col not in df.columns: #THIS CANNOT BE GOOD FOR PREDICTIONS
+            df[col] = 0.0
+
+    feature_order = [
+        "temperature_2m_c",
+        "wind_speed_100m_ms",
+        "wind_gusts_10m_ms",
+        "cloud_cover_pct",
+        "shortwave_radiation_wm2",
+        "direct_radiation_wm2",
+        "diffuse_radiation_wm2",
+        "pressure_msl_hpa",
+        "precipitation_mm",
+        'hour_sin', 'hour_cos', 'dow_sin', 'dow_cos', 'doy_sin', 'doy_cos',
+        'biomass', 'fossil_gas', 'fossil_hard_coal', 'hydro_pumped_storage',
+        'hydro_run_of_river_and_poundage', 'nuclear', 'other', 'solar',
+        'wind_offshore', 'wind_onshore'
+    ]
+
+    return df[feature_order]
