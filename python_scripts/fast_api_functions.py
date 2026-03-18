@@ -218,9 +218,10 @@ def preproc(df):
 
 
 def preproc(df):
-    df["time"] = df["time"].astype("datetime64[us]")
+    if "time" in df.columns:
+        df["time"] = df["time"].astype("datetime64[us]",  errors="ignore")
 
-    df = df.rename(columns={'time': 'datetime'})
+        df = df.rename(columns={'time': 'datetime'},  errors="ignore")
 
     weather_cols = [
         'temperature_2m_c','wind_speed_100m_ms','wind_gusts_10m_ms',
@@ -237,19 +238,20 @@ def preproc(df):
     df = df.drop(columns=['Fossil Oil', 'total_output_MW'], errors="ignore")
 
     # Create Time Features
-    df['hour'] = df['datetime'].dt.hour
-    df['day_of_week'] = df['datetime'].dt.dayofweek
-    df['day_of_year'] = df['datetime'].dt.dayofyear
+    if "datetime" in df.columns:
+        df['hour'] = df['datetime'].dt.hour
+        df['day_of_week'] = df['datetime'].dt.dayofweek
+        df['day_of_year'] = df['datetime'].dt.dayofyear
 
     # cyclical encoding
-    df['hour_sin'] = np.sin(2*np.pi*df['hour']/24)
-    df['hour_cos'] = np.cos(2*np.pi*df['hour']/24)
+        df['hour_sin'] = np.sin(2*np.pi*df['hour']/24)
+        df['hour_cos'] = np.cos(2*np.pi*df['hour']/24)
 
-    df['dow_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
-    df['dow_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
+        df['dow_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
+        df['dow_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
 
-    df['doy_sin'] = np.sin(2*np.pi*df['day_of_year']/365)
-    df['doy_cos'] = np.cos(2*np.pi*df['day_of_year']/365)
+        df['doy_sin'] = np.sin(2*np.pi*df['day_of_year']/365)
+        df['doy_cos'] = np.cos(2*np.pi*df['day_of_year']/365)
 
     df = df.drop(columns=['hour','day_of_week', 'day_of_year', 'datetime'], errors="ignore")
 

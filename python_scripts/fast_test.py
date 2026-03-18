@@ -3,7 +3,9 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow import keras
 
+from google.cloud import bigquery
 from fast_api_functions import get_aligned_weather_elexon_fill, merge_weather_elexon, preproc, make_lstm_input, get_london_forecast_step_halfhour
+
 
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
@@ -12,6 +14,7 @@ ELEXON_URL = "https://data.elexon.co.uk/bmrs/api/v1/generation/actual/per-type"
 # http://127.0.0.1:8000/predict?pickup_datetime=2014-07-06+19:18:00&pickup_longitude=-73.950655&pickup_latitude=40.783282&dropoff_longitude=-73.984365&dropoff_latitude=40.769802&passenger_count=2
 @app.get("/predict")
 def predict(datetime: str):
+
 
     PROJECT = "gridzero-489711"
     DATASET = "merged_set"
@@ -86,17 +89,48 @@ def predict(datetime: str):
 
     df_processed = preproc(merged_df)
 
-    X_input = make_lstm_input(df=df_processed)
+    y_preds = []
 
-    y_pred = model.predict(X_input)
-    y_pred = y_scaler.inverse_transform(y_pred)
-    y_pred
+    for i in range(671+1):
+        df_processed = df_processed[feature_cols]
 
-    latest_forecast = get_london_forecast_step_halfhour()
+        X_input = make_lstm_input(df=df_processed)
 
-    pred_df = pd.DataFrame(y_pred, columns=target_cols)
+        y_pred = model.predict(X_input)
+        y_pred = y_scaler.inverse_transform(y_pred)
 
-    final_df = pd.concat([latest_forecast.reset_index(drop=True),
-                      pred_df.reset_index(drop=True)], axis=1)
+        y_preds.append(y_pred)
 
-    new_data_df = preproc(final_df)
+        pred_df = pd.DataFrame(y_pred, columns=target_cols)
+        latest_forecast = get_london_forecast_step_halfhour(i)
+
+        new_data = pd.concat([latest_forecast.reset_index(drop=True),
+                    pred_df.reset_index(drop=True)], axis=1)
+
+        new_row = preproc(new_data)
+        new_row = new_row[feature_cols]
+
+        df_processed = pd.concat([df_processed, new_row], ignore_index=True)
+
+
+
+@app.get("/predict_lstm")
+# JUST LSTM
+def predict_lstm(days = 14):
+
+    weather_raw = fetch_forecast()
+
+    weather_clean = weather_preproc(weather_raw)
+
+    lstm_features = build_lstm_features(weather_clean)
+
+    generation_prediction = lstm_predictor.predict(lstm_features)
+
+    xgb_features = build_xgb_features(weather_clean, generation_prediction)
+
+    carbon = xgb_predictor.predict(xgb_features)
+
+    return {
+        "generation_prediction": generation_prediction.tolist(),
+        # "carbon_intensity": carbon
+    }
