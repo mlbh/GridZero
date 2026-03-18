@@ -1,15 +1,17 @@
 import xgboost as xgb
 import numpy as np
-
+import pandas as pd
 class XGBPredictor:
 
     def __init__(self, model):
         self.model = model
 
-    def predict(self, features):
+    def predict(self, features: pd.DataFrame):
 
-        prediction = self.model.predict(features)
+        numeric_features = features.select_dtypes(include=['number'])
 
-        return float(prediction[0])
+        dmatrix = xgb.DMatrix(numeric_features)
 
+        prediction = self.model.predict(dmatrix)
 
+        return prediction
