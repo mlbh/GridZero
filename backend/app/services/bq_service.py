@@ -25,3 +25,29 @@ def fetch_historical_gen(project_id, dataset_id, table_id):
     df_gen = df_gen.set_index('time').resample('30min').ffill().reset_index()
 
     return df_gen
+    
+#EXELON DATA FETCHER
+import requests
+import pandas as pd
+
+def fetch_elexon_history(api_key):
+    # This endpoint gets Actual Generation by Fuel Type
+    # Note: Check Elexon Insights for the exact latest endpoint (B1620 is common)
+    url = "https://api.bmreports.com/BMRS/B1620/v1"
+    
+    params = {
+        'APIKey': api_key,
+        'SettlementDate': (pd.Timestamp.now() - pd.Timedelta(days=7)).strftime('%Y-%m-%d'),
+        'Period': '*',
+        'ServiceType': 'json'
+    }
+    
+    # Logic: Loop through the last 7 days and collect the data
+    # Elexon provides data in 30-minute chunks (Settlement Periods 1-48)
+    # which aligns PERFECTLY with your 30-min training data.
+    
+    # ... code to parse Elexon's nested JSON into a DataFrame ...
+    # Ensure columns match your model: 'solar', 'wind_onshore', etc.
+    columns = cols_from_weather #copy paste
+    #MERGE HERE?
+
