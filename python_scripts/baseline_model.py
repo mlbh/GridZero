@@ -337,36 +337,59 @@ def gridsearch_model_xgb(
 
     return grid, X_train, X_test, y_train, y_test
 
-# BBoujie af LLM CHECK to help debugging
-# tables = ['test_merge_2017_onward_raw', 'test_merge_with_the_sauce']
 
-# for table in tables:
-#     print(f"\n--- TESTING PREPROC: {table} ---")
+def baseline_model_xgb_3(
+                        PROJECT: str='gridzero-489711',
+                        DATASET: str='merged_set',
+                        TABLE: str='test_merge_2017_onward_raw',
+                        target_col='carbon_intensity_gco2_kwh',
+                        test_size:int = 0.3
+                        ) -> tuple[XGBRegressor,
+                                   pd.DataFrame,
+                                   pd.DataFrame,
+                                   pd.DataFrame,
+                                   pd.DataFrame,
+                                   ]:
 
-#     df = load_from_bigquery(
-#         PROJECT='gridzero-489711',
-#         DATASET='merged_set',
-#         TABLE=table
-#     )
+    # load df from BQ
+    df = load_from_bigquery(PROJECT=PROJECT, DATASET=DATASET, TABLE=TABLE)
+    # sort by datetime and reset index ooooo
+    df = df.sort_values('datetime').reset_index(drop=True)
+    target_col = 'carbon_intensity_gco2_kwh'
+    # temporal split
+    #option 1 by year
+    # train_df = df[df['datetime'].dt.year == 2025]
+    # test_df  = df[df['datetime'].dt.year >= 2025]
+    # option 2
+    split_idx = int(len(df) * 0.8)
 
-#     df_pre = baseline_preproc(df)
+    train_df = df.iloc[:split_idx].copy()
+    test_df  = df.iloc[split_idx:].copy()
 
-#     print("raw shape:", df.shape)
-#     print("preproc shape:", df_pre.shape)
-#     print("columns after preproc:", df_pre.columns.tolist())
+    X_train = train_df.drop(columns=[target_col, 'datetime'])
+    y_train = train_df[target_col]
 
-#     target_candidates = [c for c in df_pre.columns if 'carbon_intensity' in c]
-#     print("target candidates:", target_candidates)
+    X_test = test_df.drop(columns=[target_col, 'datetime'])
+    y_test = test_df[target_col]
 
-#     if target_candidates:
-#         target_col = target_candidates[0]
-#         print("target NA count:", df_pre[target_col].isna().sum())
+    # keep only num col to make xgboost happy
+    feature_cols = X_train.select_dtypes(include='number').columns.tolist()
 
-#     lag_cols = [c for c in ['lag_48', 'lag_336', 'lag_17520'] if c in df_pre.columns]
-#     print("lag cols present:", lag_cols)
+    X_train = X_train[feature_cols]
+    X_test = X_test[feature_cols]
 
-#     if lag_cols:
-#         print("lag NA counts:")
-#         print(df_pre[lag_cols].isna().sum())
-
-#     print("total NA count in preproc df:", df_pre.isna().sum().sum())
+    # build simple xgb bood model
+    model = XGBRegressor(
+            random_state=42,
+            n_estimators=1450,
+            learning_rate=0.04,
+            max_depth=6,
+            min_child_weight=6,
+            gamma=0,
+            subsample=1,
+            colsample_bytree=1,
+            reg_alpha=0,
+            reg_lambda=2
+            )
+    model.fit(X_train, y_train)
+    return model, X_train, X_test, y_train, y_test

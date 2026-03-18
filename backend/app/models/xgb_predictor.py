@@ -5,6 +5,9 @@ class XGBPredictor:
 
     def predict(self, features):
 
-        prediction = self.model.predict(features)
+        if features.ndim == 1:
+            features = features.reshape(1, -1)
 
-        return float(prediction[0])
+        predictions = self.model.predict(features)
+
+        return float(predictions.tolist())
