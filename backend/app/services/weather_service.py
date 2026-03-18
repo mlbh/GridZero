@@ -119,3 +119,30 @@ def weather_preproc(df):
     ]
 
     return df[feature_order]
+
+
+
+
+#############################NEW-SYSTEM###############################
+from app.fast_api_functions import get_aligned_weather_elexon_fill,merge_weather_elexon,preproc, get_london_forecast_step_halfhour_all
+
+def get_master_context():
+    """
+    Fetches 7 days of HISTORY (Weather + Elexon)
+    AND 14 days of FORECAST (Weather).
+    Returns a unified DataFrame.
+    """
+    # 1. Get History (Weather & Elexon)
+    weather_hist_df, elexon_hist_df = get_aligned_weather_elexon_fill()
+    history_df = merge_weather_elexon(weather_hist_df, elexon_hist_df)
+
+    # 2. Get Forecast (Next 14 Days Weather)
+    forecast_df = get_london_forecast_step_halfhour_all()
+
+    # 3. Combine them
+    # Forecast starts where history ends
+    master_df = pd.concat([history_df, forecast_df], ignore_index=True)
+
+    # 4. Final Preprocess (Cyclical features, renaming)
+    # Note: Gen columns in the 'future' part of master_df will be NaN initially
+    return preproc(master_df)

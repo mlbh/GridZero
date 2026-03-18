@@ -16,6 +16,20 @@ LSTM_FEATURES = [
 
 ]
 
+GENERATION_COLS = [
+    "biomass",
+    "fossil_oil"
+    "fossil_gas",
+    "fossil_hard_coal",
+    "hydro_pumped_storage",
+    "hydro_run_of_river_and_poundage",
+    "nuclear",
+    "other",
+    "solar",
+    "wind_offshore",
+    "wind_onshore",
+    "totaloutput_mw"
+]
 
 def build_lstm_features(weather_df: pd.DataFrame):
 
@@ -29,18 +43,27 @@ def build_lstm_features(weather_df: pd.DataFrame):
     return X
 
 
-def build_xgb_features(weather_df: pd.DataFrame, generation_prediction):
+def build_xgb_features(weather_df: pd.DataFrame, generation_prediction: np.ndarray):
+    """ weather_df coming in of nx48
+    generation_prediction: shape (48, 11)
+    XGBoost will predict nx48carbon intensity value per row.
+    """
+    # pred generation features
+    gen_pred_df = pd.DataFrame(generation_prediction, columns=GENERATION_COLS)
 
-    features = {}
+    total_mw = gen_pred_df["totaloutput_mw"].replace(0, 1e-8)
 
-    features["temp_mean"] = weather_df["temperature_2m_c"].mean()
-    features["wind_mean"] = weather_df["wind_speed_100m_ms"].mean()
-    features["wind_max"] = weather_df["wind_speed_100m_ms"].max()
-    features["solar_total"] = weather_df["shortwave_radiation_wm2"].sum()
-    features["precip_total"] = weather_df["precipitation_mm"].sum()
-    features["cloud_mean"] = weather_df["cloud_cover_pct"].mean()
+    for col in GENERATION_COLS:
+        gen_pred_df[f"gen_mw_{col}"] = gen_pred_df[col]
+        if col != "totaloutput_mw":
+            gen_pred_df[f"gen_prop_{col}"] = gen_pred_df[col] / total_mw
 
-    features["generation_mw"] = generation_prediction[0]
-    features["demand_mw"] = generation_prediction[1]
+    gen_pred_df = gen_pred_df.drop(columns=GENERATION_COLS)  # drop raw cols, keep mw_ and prop_ versions
 
-    return pd.DataFrame([features])
+    # wather features
+    weather_features = weather_df[LSTM_FEATURES].reset_index(drop=True)
+
+    # combine rows
+    combined = pd.concat([weather_features, gen_pred_df], axis=1)
+
+    return combined  # shape (48, n_features)

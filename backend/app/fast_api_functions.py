@@ -159,65 +159,6 @@ def merge_weather_elexon(weather_df, elexon_df):
     return df
 
 
-def preproc(df):
-    df["time"] = df["time"].astype("datetime64[us]")
-
-    df = df.rename(columns={'time': 'datetime'})
-
-    weather_cols = [
-        'temperature_2m_c','wind_speed_100m_ms','wind_gusts_10m_ms',
-        'cloud_cover_pct','shortwave_radiation_wm2','direct_radiation_wm2',
-        'diffuse_radiation_wm2','pressure_msl_hpa'
-        ]
-
-    gen_cols = [
-    'Biomass','Fossil Gas','Fossil Hard coal','Fossil Oil',
-    'Hydro Pumped Storage','Hydro Run-of-river and poundage',
-    'Nuclear','Other','Solar','Wind Offshore','Wind Onshore'
-    ]
-
-    df = df.drop(columns=['Fossil Oil', 'total_output_MW'], errors="ignore")
-
-    # Create Time Features
-    df['hour'] = df['datetime'].dt.hour
-    df['day_of_week'] = df['datetime'].dt.dayofweek
-    df['day_of_year'] = df['datetime'].dt.dayofyear
-
-    # cyclical encoding
-    df['hour_sin'] = np.sin(2*np.pi*df['hour']/24)
-    df['hour_cos'] = np.cos(2*np.pi*df['hour']/24)
-
-    df['dow_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
-    df['dow_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
-
-    df['doy_sin'] = np.sin(2*np.pi*df['day_of_year']/365)
-    df['doy_cos'] = np.cos(2*np.pi*df['day_of_year']/365)
-
-    df = df.drop(columns=['hour','day_of_week', 'day_of_year', 'datetime'], errors="ignore")
-
-    # using same naming convention for all columns
-    df.columns = (
-        df.columns
-        .str.lower()
-        .str.replace(' ', '_')
-        .str.replace('-', '_')
-    )
-
-    df = df.rename(columns={
-        "temperature_2m": "temperature_2m_c",
-        "wind_speed_100m": "wind_speed_100m_ms",
-        "wind_gusts_10m": "wind_gusts_10m_ms",
-        "cloud_cover": "cloud_cover_pct",
-        "shortwave_radiation": "shortwave_radiation_wm2",
-        "direct_radiation": "direct_radiation_wm2",
-        "diffuse_radiation": "diffuse_radiation_wm2",
-        "pressure_msl": "pressure_msl_hpa",
-        "precipitation": "precipitation_mm",
-    })
-
-    return df
-
-
 
 def preproc(df):
     if "time" in df.columns:
@@ -236,7 +177,7 @@ def preproc(df):
     'Hydro Pumped Storage','Hydro Run-of-river and poundage',
     'Nuclear','Other','Solar','Wind Offshore','Wind Onshore'
     ]
-
+    #Fossil oil might need to come back for XGboost
     df = df.drop(columns=['Fossil Oil', 'total_output_MW'], errors="ignore")
 
     # Create Time Features
@@ -279,7 +220,49 @@ def preproc(df):
 
     return df
 
+def preproc(df):
+    df = df.copy()
 
+    # 1. Handle Time Column
+    if "time" in df.columns:
+        df["datetime"] = pd.to_datetime(df["time"]).dt.tz_localize(None)
+
+    # 2. Cleanup Generation Columns
+    # LSTM was trained on lowercase_with_underscores
+    df.columns = (
+        df.columns
+        .str.lower()
+        .str.replace(' ', '_')
+        .str.replace('-', '_')
+    )
+
+    # 3. Rename Map (to match LSTM feature_order)
+    rename_map = {
+        "temperature_2m": "temperature_2m_c",
+        "wind_speed_100m": "wind_speed_100m_ms",
+        "wind_gusts_10m": "wind_gusts_10m_ms",
+        "cloud_cover": "cloud_cover_pct",
+        "shortwave_radiation": "shortwave_radiation_wm2",
+        "direct_radiation": "direct_radiation_wm2",
+        "diffuse_radiation": "diffuse_radiation_wm2",
+        "pressure_msl": "pressure_msl_hpa",
+        "precipitation": "precipitation_mm",
+    }
+    df = df.rename(columns=rename_map)
+
+    # Create Time Features
+    df['hour_sin'] = np.sin(2 * np.pi * df['datetime'].dt.hour / 24)
+    df['hour_cos'] = np.cos(2 * np.pi * df['datetime'].dt.hour / 24)
+
+    df['dow_sin'] = np.sin(2 * np.pi * df['datetime'].dt.dayofweek / 7)
+    df['dow_cos'] = np.cos(2 * np.pi * df['datetime'].dt.dayofweek / 7)
+
+    df['doy_sin'] = np.sin(2 * np.pi * df['datetime'].dt.dayofyear / 365.25)
+    df['doy_cos'] = np.cos(2 * np.pi * df['datetime'].dt.dayofyear / 365.25)
+
+    # IMPORTANT: We do NOT drop 'datetime' here.
+    # We need it to index the DataFrame in the route.
+    return df
 
 def make_lstm_input(df):
     """
