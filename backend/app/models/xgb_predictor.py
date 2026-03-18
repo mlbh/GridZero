@@ -18,7 +18,17 @@ class XGBPredictor:
         for i in range (len(features_df)):
             row = features_df.iloc[i],copy()
 
-        
+            # 48 predictions from lstm override carbon_lag_48
+            # with our xgb predictions not historical API values
+            # carbon_lag_17520 from API
+            if i >= 48:
+                row["carbon_lag_48"] = predictions[i - 48]
+
+            # predict for a single row
+            X = pd.DataFrame([row])
+            pred = self.model.predict(X)
+            predictions.append(float(pred[0]))
+
 
 
         predictions = self.model.predict(features)

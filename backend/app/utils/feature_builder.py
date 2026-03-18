@@ -18,7 +18,6 @@ LSTM_FEATURES = [
 
 GENERATION_COLS = [
     "biomass",
-    "fossil_oil"
     "fossil_gas",
     "fossil_hard_coal",
     "hydro_pumped_storage",
@@ -29,7 +28,6 @@ GENERATION_COLS = [
     "wind_offshore",
     "wind_onshore",
     "totaloutput_mw"
-    # note no totaloutput_mw — calculated below
 ]
 
 XGB_FEATURES = [
@@ -60,6 +58,7 @@ XGB_FEATURES = [
     "doy_sin",
     "doy_cos",
     "carbon_lag_48",
+    "carbon_lag_336",
     "carbon_lag_17520"
 ]
 
@@ -80,9 +79,9 @@ def build_xgb_features(
     carbon_history: pd.Series
 ) -> pd.DataFrame:
     """
-    weather_df:            48 rows, datetime-indexed
-    generation_prediction: shape (48, 10) from LSTM — 10 generation types, no total
-    carbon_history:        datetime-indexed Series from carbon_service
+    weather_df: 48 rows, datetime-indexed
+    generation_prediction: shape (48, 10) from LSTM 10 generation types, no total yet needs calc
+    carbon_history: datetime indexed series from carbon_service.py
 
     Returns DataFrame of shape (48, 28) matching XGB_FEATURES exactly.
     """
@@ -96,7 +95,7 @@ def build_xgb_features(
         columns=GENERATION_COLS
     )
 
-    # calculate totaloutput_mw by summing all generation types
+    # calc: totaloutput_mw by summing all generation types
     gen_df["totaloutput_mw"] = gen_df[GENERATION_COLS].sum(axis=1)
 
     # cyclical features from datetime index
@@ -115,15 +114,13 @@ def build_xgb_features(
     cyclical_df["doy_sin"]  = np.sin(2 * np.pi * doy  / 365)
     cyclical_df["doy_cos"]  = np.cos(2 * np.pi * doy  / 365)
 
-    # carbon lag lookups from historical API
-    lag_48    = timestamps - pd.Timedelta(hours=24)
-    lag_17520 = timestamps - pd.Timedelta(days=365)
-
+    # carbon lag from historical API
     lag_df = pd.DataFrame(index=range(len(timestamps)))
-    lag_df["carbon_lag_48"]    = carbon_history.reindex(lag_48).values
-    lag_df["carbon_lag_17520"] = carbon_history.reindex(lag_17520).values
+    lag_df["carbon_lag_48"]    = carbon_history["yesterday"][:48]
+    lag_df["carbon_lag_336"]   = 0 # placeholder to remove
+    lag_df["carbon_lag_17520"] = carbon_history["year_ago"][:48]
 
-    # fallback if any historical values missing
+    # note - fallback if any historical values missing suggestion to impute tomo
     lag_df = lag_df.ffill().bfill()
 
     # combine in exact training order
