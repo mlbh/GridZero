@@ -148,7 +148,7 @@ def merge_weather_elexon(weather_df, elexon_df):
         elexon_df,
         left_on="time",
         right_on="startTime",
-        how="inner"
+        how="outer"
     )
 
     # Drop duplicate time column from Elexon
@@ -330,7 +330,7 @@ def make_lstm_input(df):
 
 
 
-def get_london_forecast_step_halfhour(step=0):
+def get_london_forecast_step_halfhour_all():
     """
     Return a single-row DataFrame for London's forecast at a given half-hour step.
 
@@ -349,8 +349,8 @@ def get_london_forecast_step_halfhour(step=0):
     pd.DataFrame
         Single-row DataFrame containing one forecast record.
     """
-    if step < 0:
-        raise ValueError("step must be >= 0")
+    # if step < 0:
+    #     raise ValueError("step must be >= 0")
 
     url = "https://api.open-meteo.com/v1/forecast"
 
@@ -370,7 +370,7 @@ def get_london_forecast_step_halfhour(step=0):
             "precipitation",
         ],
         "timezone": "GMT",
-        "forecast_days": 14,
+        "forecast_days": 16,
         "wind_speed_unit": "ms",
         "current": "temperature_2m",
     }
@@ -400,9 +400,9 @@ def get_london_forecast_step_halfhour(step=0):
     # Keep only forecast rows from that point onward
     forecast_df = df[df["time"] >= forecast_start].reset_index(drop=True)
 
-    max_step = len(forecast_df) - 1
-    if step > max_step:
-        raise IndexError(f"step must be between 0 and {max_step}")
+    # max_step = len(forecast_df) - 1
+    # if step > max_step:
+    #     raise IndexError(f"step must be between 0 and {max_step}")
 
     # Return a single-record DataFrame
-    return forecast_df.iloc[[step]].reset_index(drop=True)
+    return forecast_df
