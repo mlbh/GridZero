@@ -11,7 +11,7 @@ import pandas as pd
 import datetime
 import joblib
 from tensorflow import keras
-from fast_api_functions import get_aligned_weather_elexon_fill, merge_weather_elexon, preproc, make_lstm_input, get_london_forecast_step_halfhour_all
+from app.fast_api_functions import get_aligned_weather_elexon_fill, merge_weather_elexon, preproc, make_lstm_input, get_london_forecast_step_halfhour_all
 # app = FastAPI()
 # uvicorn fast:app --reload
 
@@ -49,9 +49,9 @@ async def lifespan(app: FastAPI):
     app.state.xgb_predictor = XGBPredictor(model_store.xgb)
 
     #automatic 14 day weather fetch - clean all the weather data
-    print("Fetching 14-day forecast into memory...")
-    raw_weather = fetch_forecast(STATION_LAT, STATION_LON)
-    app.state.cleaned_weather_df = weather_preproc(raw_weather)
+    # print("Fetching 14-day forecast into memory...")
+    # raw_weather = fetch_forecast(STATION_LAT, STATION_LON)
+    # app.state.cleaned_weather_df = weather_preproc(raw_weather)
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -112,8 +112,8 @@ def predict_lstm(days = 14):
 
     model = keras.models.load_model("gs://grid_zero_bucket/lstm_model1.keras")
 
-    X_scaler = joblib.load("x_scaler.pkl")
-    y_scaler = joblib.load("y_scaler.pkl")
+
+    y_scaler = model_store.y_scaler
 
     weather_df, elexon_df = get_aligned_weather_elexon_fill()
     weather_forecast = get_london_forecast_step_halfhour_all()
@@ -139,11 +139,16 @@ def predict_lstm(days = 14):
         result_df['Fossil Oil'] = 0
         elexon_df = pd.concat((elexon_df, result_df)).reset_index(drop=True)
 
-    exelon_df = exelon_df.clip(lower=0)
+    elexon_df[['Biomass', 'Fossil Gas', 'Fossil Hard coal', 'Fossil Oil',
+                       'Hydro Pumped Storage', 'Hydro Run-of-river and poundage', 'Nuclear',
+                       'Other', 'Solar', 'Wind Offshore', 'Wind Onshore', 'total_output_MW']] = elexon_df[['Biomass', 'Fossil Gas', 'Fossil Hard coal', 'Fossil Oil',
+                       'Hydro Pumped Storage', 'Hydro Run-of-river and poundage', 'Nuclear',
+                       'Other', 'Solar', 'Wind Offshore', 'Wind Onshore', 'total_output_MW']].clip(lower=0)
 
-    predictions = exelon_df[336:]
-
-    return predictions
+    predictions = elexon_df[336:]
+    results = pd.concat((weather_concat[336:], predictions), axis=1).dropna()
+    print(len(results))
+    return results
 
 
 
