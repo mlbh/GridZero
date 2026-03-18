@@ -11,3 +11,5 @@ class XGBPredictor:
         prediction = self.model.predict(features)
 
         return float(prediction[0])
+
+
