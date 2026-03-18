@@ -29,6 +29,38 @@ GENERATION_COLS = [
     "wind_offshore",
     "wind_onshore",
     "totaloutput_mw"
+    # note no totaloutput_mw — calculated below
+]
+
+XGB_FEATURES = [
+    "temperature_2m_c",
+    "wind_speed_100m_ms",
+    "wind_gusts_10m_ms",
+    "cloud_cover_pct",
+    "shortwave_radiation_wm2",
+    "direct_radiation_wm2",
+    "diffuse_radiation_wm2",
+    "pressure_msl_hpa",
+    "precipitation_mm",
+    "biomass",
+    "fossil_gas",
+    "fossil_hard_coal",
+    "hydro_pumped_storage",
+    "hydro_run_of_river_and_poundage",
+    "nuclear",
+    "other",
+    "solar",
+    "wind_offshore",
+    "wind_onshore",
+    "totaloutput_mw",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "doy_sin",
+    "doy_cos",
+    "carbon_lag_48",
+    "carbon_lag_17520"
 ]
 
 def build_lstm_features(weather_df: pd.DataFrame):
@@ -42,28 +74,67 @@ def build_lstm_features(weather_df: pd.DataFrame):
 
     return X
 
-
-def build_xgb_features(weather_df: pd.DataFrame, generation_prediction: np.ndarray):
-    """ weather_df coming in of nx48
-    generation_prediction: shape (48, 11)
-    XGBoost will predict nx48carbon intensity value per row.
+def build_xgb_features(
+    weather_df: pd.DataFrame,
+    generation_prediction: np.ndarray,
+    carbon_history: pd.Series
+) -> pd.DataFrame:
     """
-    # pred generation features
-    gen_pred_df = pd.DataFrame(generation_prediction, columns=GENERATION_COLS)
+    weather_df:            48 rows, datetime-indexed
+    generation_prediction: shape (48, 10) from LSTM — 10 generation types, no total
+    carbon_history:        datetime-indexed Series from carbon_service
 
-    total_mw = gen_pred_df["totaloutput_mw"].replace(0, 1e-8)
+    Returns DataFrame of shape (48, 28) matching XGB_FEATURES exactly.
+    """
 
-    for col in GENERATION_COLS:
-        gen_pred_df[f"gen_mw_{col}"] = gen_pred_df[col]
-        if col != "totaloutput_mw":
-            gen_pred_df[f"gen_prop_{col}"] = gen_pred_df[col] / total_mw
-
-    gen_pred_df = gen_pred_df.drop(columns=GENERATION_COLS)  # drop raw cols, keep mw_ and prop_ versions
-
-    # wather features
+    # weather feats
     weather_features = weather_df[LSTM_FEATURES].reset_index(drop=True)
 
-    # combine rows
-    combined = pd.concat([weather_features, gen_pred_df], axis=1)
+    # generation features (raw MW matching training)
+    gen_df = pd.DataFrame(
+        generation_prediction,
+        columns=GENERATION_COLS
+    )
 
-    return combined  # shape (48, n_features)
+    # calculate totaloutput_mw by summing all generation types
+    gen_df["totaloutput_mw"] = gen_df[GENERATION_COLS].sum(axis=1)
+
+    # cyclical features from datetime index
+    # replicates exactly what full_data_preproc func does
+    timestamps = weather_df.index
+
+    cyclical_df = pd.DataFrame(index=range(len(timestamps)))
+    hour = timestamps.hour
+    dow  = timestamps.dayofweek
+    doy  = timestamps.dayofyear
+
+    cyclical_df["hour_sin"] = np.sin(2 * np.pi * hour / 24)
+    cyclical_df["hour_cos"] = np.cos(2 * np.pi * hour / 24)
+    cyclical_df["dow_sin"]  = np.sin(2 * np.pi * dow  / 7)
+    cyclical_df["dow_cos"]  = np.cos(2 * np.pi * dow  / 7)
+    cyclical_df["doy_sin"]  = np.sin(2 * np.pi * doy  / 365)
+    cyclical_df["doy_cos"]  = np.cos(2 * np.pi * doy  / 365)
+
+    # carbon lag lookups from historical API
+    lag_48    = timestamps - pd.Timedelta(hours=24)
+    lag_17520 = timestamps - pd.Timedelta(days=365)
+
+    lag_df = pd.DataFrame(index=range(len(timestamps)))
+    lag_df["carbon_lag_48"]    = carbon_history.reindex(lag_48).values
+    lag_df["carbon_lag_17520"] = carbon_history.reindex(lag_17520).values
+
+    # fallback if any historical values missing
+    lag_df = lag_df.ffill().bfill()
+
+    # combine in exact training order
+    combined = pd.concat([
+        weather_features,
+        gen_df.reset_index(drop=True),
+        cyclical_df,
+        lag_df
+    ], axis=1)
+
+    # enforce exact column order to match model training
+    combined = combined[XGB_FEATURES]
+
+    return combined  # shape (48, 28)
