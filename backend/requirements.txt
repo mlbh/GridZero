@@ -142,13 +142,20 @@ google-api-core==2.30.0
 google-auth==2.49.0
 google-cloud-bigquery==3.40.1
 google-cloud-core==2.5.0
+google-cloud-storage
 google-crc32c==1.8.0
 google-resumable-media==2.8.0
 googleapis-common-protos==1.73.0
 grpcio==1.78.0
 grpcio-status==1.78.0
-google-cloud-storage
+
 # XGBOOST
 xgboost==3.2.0
 
-torch
+# lightgbm
+lightgbm==4.6.0
+
+dotenv
+tensorflow
+uvicorn
+fastapi
