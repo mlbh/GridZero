@@ -68,7 +68,7 @@ def predict(data: PredictionRequest,request: Request):
     # 2. Find the row index where the target day begins
     try:
         # Find the integer location (index) of the target date
-        target_idx = full_df.index[full_df['time'] == target_dt][0]
+        target_idx = full_df.index.get_loc(target_dt)
 
         # 3. Slice the Lookback Window
         # We need 336 rows (7 days * 48 half-hours per day)

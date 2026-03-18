@@ -31,16 +31,16 @@ def build_lstm_features(weather_df: pd.DataFrame):
 
 def build_xgb_features(weather_df: pd.DataFrame, generation_prediction):
 
-    features = {}
+    # features = {}
 
-    features["temp_mean"] = weather_df["temperature_2m_c"].mean()
-    features["wind_mean"] = weather_df["wind_speed_100m_ms"].mean()
-    features["wind_max"] = weather_df["wind_speed_100m_ms"].max()
-    features["solar_total"] = weather_df["shortwave_radiation_wm2"].sum()
-    features["precip_total"] = weather_df["precipitation_mm"].sum()
-    features["cloud_mean"] = weather_df["cloud_cover_pct"].mean()
+    # features["temp_mean"] = weather_df["temperature_2m_c"].mean()
+    # features["wind_mean"] = weather_df["wind_speed_100m_ms"].mean()
+    # features["wind_max"] = weather_df["wind_speed_100m_ms"].max()
+    # features["solar_total"] = weather_df["shortwave_radiation_wm2"].sum()
+    # features["precip_total"] = weather_df["precipitation_mm"].sum()
+    # features["cloud_mean"] = weather_df["cloud_cover_pct"].mean()
 
-    features["generation_mw"] = generation_prediction[0]
-    features["demand_mw"] = generation_prediction[1]
+    # features["generation_mw"] = generation_prediction[0]
+    # features["demand_mw"] = generation_prediction[1]
 
     return pd.DataFrame([features])
