@@ -148,7 +148,7 @@ def merge_weather_elexon(weather_df, elexon_df):
         elexon_df,
         left_on="time",
         right_on="startTime",
-        how="inner"
+        how="outer"
     )
 
     # Drop duplicate time column from Elexon
@@ -218,9 +218,10 @@ def preproc(df):
 
 
 def preproc(df):
-    df["time"] = df["time"].astype("datetime64[us]")
+    if "time" in df.columns:
+        df["time"] = df["time"].astype("datetime64[us]",  errors="ignore")
 
-    df = df.rename(columns={'time': 'datetime'})
+        df = df.rename(columns={'time': 'datetime'},  errors="ignore")
 
     weather_cols = [
         'temperature_2m_c','wind_speed_100m_ms','wind_gusts_10m_ms',
@@ -237,19 +238,20 @@ def preproc(df):
     df = df.drop(columns=['Fossil Oil', 'total_output_MW'], errors="ignore")
 
     # Create Time Features
-    df['hour'] = df['datetime'].dt.hour
-    df['day_of_week'] = df['datetime'].dt.dayofweek
-    df['day_of_year'] = df['datetime'].dt.dayofyear
+    if "datetime" in df.columns:
+        df['hour'] = df['datetime'].dt.hour
+        df['day_of_week'] = df['datetime'].dt.dayofweek
+        df['day_of_year'] = df['datetime'].dt.dayofyear
 
     # cyclical encoding
-    df['hour_sin'] = np.sin(2*np.pi*df['hour']/24)
-    df['hour_cos'] = np.cos(2*np.pi*df['hour']/24)
+        df['hour_sin'] = np.sin(2*np.pi*df['hour']/24)
+        df['hour_cos'] = np.cos(2*np.pi*df['hour']/24)
 
-    df['dow_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
-    df['dow_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
+        df['dow_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
+        df['dow_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
 
-    df['doy_sin'] = np.sin(2*np.pi*df['day_of_year']/365)
-    df['doy_cos'] = np.cos(2*np.pi*df['day_of_year']/365)
+        df['doy_sin'] = np.sin(2*np.pi*df['day_of_year']/365)
+        df['doy_cos'] = np.cos(2*np.pi*df['day_of_year']/365)
 
     df = df.drop(columns=['hour','day_of_week', 'day_of_year', 'datetime'], errors="ignore")
 
@@ -328,7 +330,7 @@ def make_lstm_input(df):
 
 
 
-def get_london_forecast_step_halfhour(step=0):
+def get_london_forecast_step_halfhour_all():
     """
     Return a single-row DataFrame for London's forecast at a given half-hour step.
 
@@ -347,8 +349,8 @@ def get_london_forecast_step_halfhour(step=0):
     pd.DataFrame
         Single-row DataFrame containing one forecast record.
     """
-    if step < 0:
-        raise ValueError("step must be >= 0")
+    # if step < 0:
+    #     raise ValueError("step must be >= 0")
 
     url = "https://api.open-meteo.com/v1/forecast"
 
@@ -368,7 +370,7 @@ def get_london_forecast_step_halfhour(step=0):
             "precipitation",
         ],
         "timezone": "GMT",
-        "forecast_days": 14,
+        "forecast_days": 16,
         "wind_speed_unit": "ms",
         "current": "temperature_2m",
     }
@@ -398,9 +400,9 @@ def get_london_forecast_step_halfhour(step=0):
     # Keep only forecast rows from that point onward
     forecast_df = df[df["time"] >= forecast_start].reset_index(drop=True)
 
-    max_step = len(forecast_df) - 1
-    if step > max_step:
-        raise IndexError(f"step must be between 0 and {max_step}")
+    # max_step = len(forecast_df) - 1
+    # if step > max_step:
+    #     raise IndexError(f"step must be between 0 and {max_step}")
 
     # Return a single-record DataFrame
-    return forecast_df.iloc[[step]].reset_index(drop=True)
+    return forecast_df

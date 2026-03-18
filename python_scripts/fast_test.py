@@ -1,31 +1,21 @@
 from fastapi import FastAPI
 import pandas as pd
+import datetime
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow import keras
 
-from fast_api_functions import get_aligned_weather_elexon_fill, merge_weather_elexon, preproc, make_lstm_input, get_london_forecast_step_halfhour
+from google.cloud import bigquery
+from fast_api_functions import get_aligned_weather_elexon_fill, merge_weather_elexon, preproc, make_lstm_input, get_london_forecast_step_halfhour_all
+
 
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 ELEXON_URL = "https://data.elexon.co.uk/bmrs/api/v1/generation/actual/per-type"
 
-# http://127.0.0.1:8000/predict?pickup_datetime=2014-07-06+19:18:00&pickup_longitude=-73.950655&pickup_latitude=40.783282&dropoff_longitude=-73.984365&dropoff_latitude=40.769802&passenger_count=2
-@app.get("/predict")
-def predict(datetime: str):
 
-    PROJECT = "gridzero-489711"
-    DATASET = "merged_set"
-    TABLE = "full_feature_engineered_data_test"
-
-    query = f"""
-        SELECT *
-        FROM {PROJECT}.{DATASET}.{TABLE}
-    """
-
-    client = bigquery.Client('gridzero-489711')
-    query_job = client.query(query)
-    result = query_job.result()
-    df = result.to_dataframe()
+@app.get("/predict_lstm")
+# JUST LSTM
+def predict_lstm(days = 14):
 
     feature_cols = [
         # weather
@@ -70,33 +60,30 @@ def predict(datetime: str):
         'wind_onshore'
     ]
 
-
-    X_scaler = MinMaxScaler()
-    y_scaler = MinMaxScaler()
-
-    X_scaler.fit_transform(df[feature_cols])
-    y_scaler.fit_transform(df[target_cols])
-
-    weather_df, elexon_df = get_aligned_weather_elexon_fill()
-    merged_df = merge_weather_elexon(weather_df, elexon_df)
-
-
-    # PREDICTING
     model = keras.models.load_model("gs://grid_zero_bucket/lstm_model1.keras")
 
-    df_processed = preproc(merged_df)
+    weather_df, elexon_df = get_aligned_weather_elexon_fill()
+    weather_forecast = get_london_forecast_step_halfhour_all()
+    if weather_forecast.loc[0, 'time'] == weather_df.loc[335, 'time']:
+        weather_concat = pd.concat((weather_df, weather_forecast[1:])).reset_index(drop=True)
+    else:
+        weather_concat = pd.concat((weather_df, weather_forecast)).reset_index(drop=True)
 
-    X_input = make_lstm_input(df=df_processed)
 
-    y_pred = model.predict(X_input)
-    y_pred = y_scaler.inverse_transform(y_pred)
-    y_pred
+    for i in range((days*48)+1):
 
-    latest_forecast = get_london_forecast_step_halfhour()
+        weather_seq = weather_concat[0+i:336+i].reset_index(drop=True)
 
-    pred_df = pd.DataFrame(y_pred, columns=target_cols)
+        seq = merge_weather_elexon(weather_seq, elexon_df[-336:].reset_index(drop=True))
+        # print(f'sending data with starttime {weather_df.loc[335+i, 'time']}| to model')
+        result = y_scaler.inverse_transform(model.predict(make_lstm_input(preproc(seq))))
 
-    final_df = pd.concat([latest_forecast.reset_index(drop=True),
-                      pred_df.reset_index(drop=True)], axis=1)
+        result_df = pd.DataFrame(result, columns=['Biomass', 'Fossil Gas', 'Fossil Hard coal',
+            'Hydro Pumped Storage', 'Hydro Run-of-river and poundage', 'Nuclear',
+            'Other', 'Solar', 'Wind Offshore', 'Wind Onshore'])
+        result_df['total_output_MW'] = float(result.sum())
+        result_df['startTime'] = elexon_df.loc[335+i, 'startTime'] + datetime.timedelta(minutes=30)
+        result_df['Fossil Oil'] = 0
+        elexon_df = pd.concat((elexon_df, result_df)).reset_index(drop=True)
 
-    new_data_df = preproc(final_df)
+    exelon_df = exelon_df.clip(lower=0)
