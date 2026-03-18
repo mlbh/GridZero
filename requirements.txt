@@ -150,3 +150,6 @@ grpcio-status==1.78.0
 
 # XGBOOST
 xgboost==3.2.0
+
+# lightgbm
+lightgbm==4.6.0

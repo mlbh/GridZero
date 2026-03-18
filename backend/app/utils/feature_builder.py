@@ -4,15 +4,16 @@ import pandas as pd
 
 LSTM_FEATURES = [
     "temperature_2m_c",
-    "wind_speed_120m_ms",
-    "wind_speed_80m_ms",
+    "wind_speed_100m_ms",
     "wind_gusts_10m_ms",
     "cloud_cover_pct",
     "shortwave_radiation_wm2",
     "direct_radiation_wm2",
     "diffuse_radiation_wm2",
     "pressure_msl_hpa",
-    "precipitation_mm"
+    "precipitation_mm",
+
+
 ]
 
 GENERATION_COLS = [
