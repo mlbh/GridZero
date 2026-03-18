@@ -2,6 +2,7 @@ from fastapi import FastAPI
 import pandas as pd
 import datetime
 from sklearn.preprocessing import MinMaxScaler
+import joblib
 from tensorflow import keras
 
 from google.cloud import bigquery
@@ -62,6 +63,9 @@ def predict_lstm(days = 14):
 
     model = keras.models.load_model("gs://grid_zero_bucket/lstm_model1.keras")
 
+    X_scaler = joblib.load("x_scaler.pkl")
+    y_scaler = joblib.load("y_scaler.pkl")
+
     weather_df, elexon_df = get_aligned_weather_elexon_fill()
     weather_forecast = get_london_forecast_step_halfhour_all()
     if weather_forecast.loc[0, 'time'] == weather_df.loc[335, 'time']:
@@ -87,3 +91,7 @@ def predict_lstm(days = 14):
         elexon_df = pd.concat((elexon_df, result_df)).reset_index(drop=True)
 
     exelon_df = exelon_df.clip(lower=0)
+
+    predictions = exelon_df[336:]
+
+    return predictions

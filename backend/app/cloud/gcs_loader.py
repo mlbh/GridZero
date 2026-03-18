@@ -8,7 +8,7 @@ class GCSModelLoader:
         self.local_dir = Path(local_dir)
         self.local_dir.mkdir(exist_ok=True)
 
-        self.client = storage.Client()
+        self.client = storage.Client(project="gridzero-489711")
         self.bucket = self.client.bucket(bucket_name)
 
     def download_file(self, gcs_path: str):
