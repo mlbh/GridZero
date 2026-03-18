@@ -239,11 +239,11 @@ def predict(data: PredictionRequest, request: Request):
         lags_17520.append(val_17520)
 
     day_features['carbon_lag_48'] = lags_48
-    day_features['carbon_lag_336'] = lags_336
+    day_features['carbon_lag_336'] = 0 #placeholder - nothing to lag for the week
     day_features['carbon_lag_17520'] = lags_17520
 
     day_features['totaloutput_mw'] = daily_preds.sum(axis=1)
-    #THERE IS NO CARBON DATA TO LAG
+    
 
     xgb_required_features = [
         'temperature_2m_c', 'wind_speed_100m_ms', 'wind_gusts_10m_ms',
