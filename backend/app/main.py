@@ -14,6 +14,7 @@ from app.services.weather_service import (
     get_london_forecast_step_halfhour_all,
     preproc
 )
+from app.services.carbon_service import fetch_carbon_history
 
 STATION_LAT = 51.5
 STATION_LON = -0.1
@@ -45,9 +46,11 @@ async def lifespan(app: FastAPI):
     )
     app.state.xgb_predictor = XGBPredictor(model_store.xgb)
 
+    # print("Pre-loading carbon history for XGBoost lags...")
+    carbon_data = fetch_carbon_history()
     print("Startup complete. Master context is ready for predictions.")
-    yield
 
+    yield
 
 app = FastAPI(lifespan=lifespan)
 
@@ -114,9 +117,47 @@ def predict(data: PredictionRequest, request: Request):
     for i, col in enumerate(gen_names):
         day_features[col] = daily_preds[:, i]
 
-    # 5. Get Carbon Intensity Prediction
-    # Assuming xgb_predictor.predict returns an array of 48 intensity values
-    carbon_intensities = xgb_predictor.predict(day_features)
+
+
+    #making lags
+    lags_48 = []
+    lags_336 = []
+    lags_17520 = []
+
+    for i in range(48):
+        current_step_idx = target_idx + i
+
+        #48
+        val_48 = master_df.loc[current_step_idx - 48, 'carbon_intensity_gco2_kwh']
+        lags_48.append(val_48)
+
+        val_336 = master_df.loc[current_step_idx - 336, 'carbon_intensity_gco2_kwh']
+        lags_336.append(val_336)
+
+        val_17520 = master_df.loc[current_step_idx - 17520, 'carbon_intensity_gco2_kwh']
+        lags_17520.append(val_17520)
+
+    day_features['carbon_lag_48'] = lags_48
+    day_features['carbon_lag_336'] = lags_336
+    day_features['carbon_lag_17520'] = lags_17520
+
+    day_features['totaloutput_mw'] = daily_preds.sum(axis=1)
+    #THERE IS NO CARBON DATA TO LAG
+
+    xgb_required_features = [
+        'temperature_2m_c', 'wind_speed_100m_ms', 'wind_gusts_10m_ms',
+        'cloud_cover_pct', 'shortwave_radiation_wm2', 'direct_radiation_wm2',
+        'diffuse_radiation_wm2', 'pressure_msl_hpa', 'precipitation_mm',
+        'biomass', 'fossil_gas', 'fossil_hard_coal', 'hydro_pumped_storage',
+        'hydro_run_of_river_and_poundage', 'nuclear', 'other', 'solar',
+        'wind_offshore', 'wind_onshore', 'totaloutput_mw', 'hour_sin',
+        'hour_cos', 'dow_sin', 'dow_cos', 'doy_sin', 'doy_cos',
+        'carbon_lag_48', 'carbon_lag_336', 'carbon_lag_17520'
+    ]
+
+    day_features_final = day_features[xgb_required_features]
+
+    carbon_intensities = xgb_predictor.predict(day_features_final)
 
     # 6. Construct the JSON Response
     return {
