@@ -45,6 +45,7 @@ class LSTMPredictor:
 
     import numpy as np
 import pandas as pd
+
 #to be integrated into a different file for iterative looping
 def predict_24h_generation(target_date, full_df, lstm_predictor):
     # 1. Find the starting point (the 7 days leading up to the target date)
@@ -83,5 +84,3 @@ def predict_24h_generation(target_date, full_df, lstm_predictor):
         total_mwh = sum(predictions) * 0.5
 
         return predictions, total_mwh
-
-
