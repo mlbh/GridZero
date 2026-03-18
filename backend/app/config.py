@@ -1,5 +1,12 @@
 import os
+from dotenv import load_dotenv
 
-GCS_BUCKET = os.getenv("MODEL_BUCKET", "energy-model-bucket")
+load_dotenv()
 
-MODEL_VERSION = os.getenv("MODEL_VERSION", "v1")
+GCS_BUCKET = os.getenv("MODEL_BUCKET")
+
+XGB_MODEL_PATH = os.getenv("XGB_MODEL_PATH")
+LSTM_MODEL_PATH = os.getenv("LSTM_MODEL_PATH")
+
+X_SCALER_PATH = os.getenv("X_SCALER_PATH", "weights/JM_lstm_x_scaler.pkl")
+Y_SCALER_PATH = os.getenv("Y_SCALER_PATH", "weights/JM_lstm_y_scaler.pkl")
