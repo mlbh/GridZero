@@ -8,6 +8,15 @@ from app.models.model_loader import model_store
 from app.models.lstm_predictor import LSTMPredictor, predict_24h_generation
 from app.models.xgb_predictor import XGBPredictor
 from app.schemas import PredictionRequest
+from app.utils.utils import get_day_from_forecast
+import pandas as pd
+
+import datetime
+import joblib
+from tensorflow import keras
+from app.fast_api_functions import get_aligned_weather_elexon_fill, merge_weather_elexon, preproc, make_lstm_input, get_london_forecast_step_halfhour_all
+# app = FastAPI()
+# uvicorn fast:app --reload
 from app.services.weather_service import (
     get_aligned_weather_elexon_fill,
     merge_weather_elexon,
@@ -45,6 +54,10 @@ async def lifespan(app: FastAPI):
     )
     app.state.xgb_predictor = XGBPredictor(model_store.xgb)
 
+    #automatic 14 day weather fetch - clean all the weather data
+    # print("Fetching 14-day forecast into memory...")
+    # raw_weather = fetch_forecast(STATION_LAT, STATION_LON)
+    # app.state.cleaned_weather_df = weather_preproc(raw_weather)
     print("Startup complete. Master context is ready for predictions.")
     yield
 
@@ -55,6 +68,98 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/")
 async def root():
     return {"message": "GridZero API is running"}
+
+
+
+@app.get("/predict_lstm")
+# JUST LSTM
+def predict_lstm(days = 14):
+
+    feature_cols = [
+        # weather
+        'temperature_2m_c',
+        'wind_speed_100m_ms',
+        'wind_gusts_10m_ms',
+        'cloud_cover_pct',
+        'shortwave_radiation_wm2',
+        'direct_radiation_wm2',
+        'diffuse_radiation_wm2',
+        'pressure_msl_hpa',
+        'precipitation_mm',
+
+        # time
+        'hour_sin','hour_cos',
+        'dow_sin','dow_cos',
+        'doy_sin','doy_cos',
+
+        # past generation (important)
+        'biomass',
+        'fossil_gas',
+        'fossil_hard_coal',
+        'hydro_pumped_storage',
+        'hydro_run_of_river_and_poundage',
+        'nuclear',
+        'other',
+        'solar',
+        'wind_offshore',
+        'wind_onshore'
+    ]
+
+    target_cols = [
+        'biomass',
+        'fossil_gas',
+        'fossil_hard_coal',
+        'hydro_pumped_storage',
+        'hydro_run_of_river_and_poundage',
+        'nuclear',
+        'other',
+        'solar',
+        'wind_offshore',
+        'wind_onshore'
+    ]
+
+    model = keras.models.load_model("gs://grid_zero_bucket/lstm_model1.keras")
+
+
+    y_scaler = model_store.y_scaler
+
+    weather_df, elexon_df = get_aligned_weather_elexon_fill()
+    weather_forecast = get_london_forecast_step_halfhour_all()
+    if weather_forecast.loc[0, 'time'] == weather_df.loc[335, 'time']:
+        weather_concat = pd.concat((weather_df, weather_forecast[1:])).reset_index(drop=True)
+    else:
+        weather_concat = pd.concat((weather_df, weather_forecast)).reset_index(drop=True)
+
+
+    for i in range((days*48)+1):
+
+        weather_seq = weather_concat[0+i:336+i].reset_index(drop=True)
+
+        seq = merge_weather_elexon(weather_seq, elexon_df[-336:].reset_index(drop=True))
+        # print(f'sending data with starttime {weather_df.loc[335+i, 'time']}| to model')
+        result = y_scaler.inverse_transform(model.predict(make_lstm_input(preproc(seq))))
+
+        result_df = pd.DataFrame(result, columns=['Biomass', 'Fossil Gas', 'Fossil Hard coal',
+            'Hydro Pumped Storage', 'Hydro Run-of-river and poundage', 'Nuclear',
+            'Other', 'Solar', 'Wind Offshore', 'Wind Onshore'])
+        result_df['total_output_MW'] = float(result.sum())
+        result_df['startTime'] = elexon_df.loc[335+i, 'startTime'] + datetime.timedelta(minutes=30)
+        result_df['Fossil Oil'] = 0
+        elexon_df = pd.concat((elexon_df, result_df)).reset_index(drop=True)
+
+    elexon_df[['Biomass', 'Fossil Gas', 'Fossil Hard coal', 'Fossil Oil',
+                       'Hydro Pumped Storage', 'Hydro Run-of-river and poundage', 'Nuclear',
+                       'Other', 'Solar', 'Wind Offshore', 'Wind Onshore', 'total_output_MW']] = elexon_df[['Biomass', 'Fossil Gas', 'Fossil Hard coal', 'Fossil Oil',
+                       'Hydro Pumped Storage', 'Hydro Run-of-river and poundage', 'Nuclear',
+                       'Other', 'Solar', 'Wind Offshore', 'Wind Onshore', 'total_output_MW']].clip(lower=0)
+
+    predictions = elexon_df[336:]
+    results = pd.concat((weather_concat[336:], predictions), axis=1).dropna()
+    print(len(results))
+    return results
+
+
+
 
 @app.post("/predict")
 def predict(data: PredictionRequest, request: Request):

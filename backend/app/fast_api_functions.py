@@ -2,6 +2,8 @@
 import requests
 import pandas as pd
 import numpy as np
+import joblib
+from app.models.model_loader import model_store
 
 
 
@@ -282,6 +284,50 @@ def make_lstm_input(df):
     X : np.ndarray
         Shape (1, lookback, n_features)
     """
+    X_scaler = model_store.x_scaler
+    feature_cols = [
+        # weather
+        'temperature_2m_c',
+        'wind_speed_100m_ms',
+        'wind_gusts_10m_ms',
+        'cloud_cover_pct',
+        'shortwave_radiation_wm2',
+        'direct_radiation_wm2',
+        'diffuse_radiation_wm2',
+        'pressure_msl_hpa',
+        'precipitation_mm',
+
+        # time
+        'hour_sin','hour_cos',
+        'dow_sin','dow_cos',
+        'doy_sin','doy_cos',
+
+        # past generation (important)
+        'biomass',
+        'fossil_gas',
+        'fossil_hard_coal',
+        'hydro_pumped_storage',
+        'hydro_run_of_river_and_poundage',
+        'nuclear',
+        'other',
+        'solar',
+        'wind_offshore',
+        'wind_onshore'
+    ]
+
+    target_cols = [
+        'biomass',
+        'fossil_gas',
+        'fossil_hard_coal',
+        'hydro_pumped_storage',
+        'hydro_run_of_river_and_poundage',
+        'nuclear',
+        'other',
+        'solar',
+        'wind_offshore',
+        'wind_onshore'
+    ]
+
     df = df.copy()
 
     # Ensure required columns exist
