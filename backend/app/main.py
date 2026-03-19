@@ -122,7 +122,7 @@ def predict_lstm(days = 7):
         'wind_onshore'
     ]
     days = int(days)
-    model = keras.models.load_model("gs://grid_zero_bucket/lstm_model1.keras")
+    model = keras.models.load_model("gs://grid_zero_bucket/lstm_model3.keras")
 
 
     y_scaler = model_store.y_scaler
