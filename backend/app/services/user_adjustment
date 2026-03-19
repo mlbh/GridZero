@@ -1,0 +1,93 @@
+import numpy as np
+import pandas as pd
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
+from app.utils.utils import normalize_mix, calculate_surplus, battery_requirement
+
+# to add to main.py:
+# top: from app.routes.adjust import router as adjust_router
+# after app = FastAPI(lifespan=lifespan): app.include_router(adjust_router)
+# in lifespan: carbon_data = fetch_carbon_history() -> app.state.carbon_data = fetch_carbon_history()
+
+# note - routes to app = FastAPI
+router = APIRouter()
+
+
+class AdjustRequest(BaseModel):
+    target_date: str
+    demand_mw: float
+    user_mix: dict  # {"biomass": xx, "fossil_gas": xxx, ...} in MW
+
+
+@router.post("/adjust")
+def adjust(data: AdjustRequest, request: Request):
+
+    # pull from app state
+    master_df     = request.app.state.master_df
+    xgb_predictor = request.app.state.xgb_predictor
+    carbon_data   = request.app.state.carbon_data
+
+    # find target day in master df
+    target_dt = pd.to_datetime(data.target_date).replace(hour=0, minute=0, second=0)
+    time_col  = 'datetime' if 'datetime' in master_df.columns else 'time'
+
+    try:
+        target_idx = master_df.index[master_df[time_col] == target_dt][0]
+    except IndexError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Date {data.target_date} not found"
+        )
+
+    # get weather for that day from master df
+    day_features = master_df.iloc[target_idx: target_idx + 48].copy()
+
+    # normalise user mix to proportions then -> MW
+    total_mw   = sum(data.user_mix.values())
+    normalised = normalize_mix(data.user_mix)
+
+    energy_gen_names = [
+        'biomass', 'fossil_gas', 'fossil_hard_coal', 'hydro_pumped_storage',
+        'hydro_run_of_river_and_poundage', 'nuclear', 'other', 'solar',
+        'wind_offshore', 'wind_onshore'
+    ]
+
+    # note - same mix repeated across all 48 slots
+    for col in energy_gen_names:
+        day_features[col] = normalised.get(col, 0) * total_mw
+
+    # note - carbon lags from app.state not master_df
+    # master_df dosnt have carbon_intensity_gco2_kwh
+    day_features['carbon_lag_48']    = carbon_data["yesterday"][:48]
+    day_features['carbon_lag_336']   = 0  # placeholder - drop when retrained tmrw
+    day_features['carbon_lag_17520'] = carbon_data["year_ago"][:48]
+    day_features['totaloutput_mw']   = total_mw
+
+    # note - must match xgb training features exactly
+    xgb_required_features = [
+        'temperature_2m_c', 'wind_speed_100m_ms', 'wind_gusts_10m_ms',
+        'cloud_cover_pct', 'shortwave_radiation_wm2', 'direct_radiation_wm2',
+        'diffuse_radiation_wm2', 'pressure_msl_hpa', 'precipitation_mm',
+        'biomass', 'fossil_gas', 'fossil_hard_coal', 'hydro_pumped_storage',
+        'hydro_run_of_river_and_poundage', 'nuclear', 'other', 'solar',
+        'wind_offshore', 'wind_onshore', 'totaloutput_mw', 'hour_sin',
+        'hour_cos', 'dow_sin', 'dow_cos', 'doy_sin', 'doy_cos',
+        'carbon_lag_48', 'carbon_lag_336', 'carbon_lag_17520'
+    ]
+
+    day_features_final = day_features[xgb_required_features]
+    carbon_intensities = xgb_predictor.predict(day_features_final)
+
+    # calc surplus + battery
+    surplus = calculate_surplus(total_mw, data.demand_mw)
+    battery = battery_requirement(surplus["deficit_mw"])
+
+    return {
+        "target_date": data.target_date,
+        "user_mix":    normalised,
+        "total_mw":    round(total_mw, 2),
+        "surplus":     surplus,
+        "battery":     battery,
+        "avg_carbon_intensity":      round(float(np.mean(carbon_intensities)), 2),
+        "carbon_intensity_gco2_kwh": carbon_intensities  # note - list not numpy array
+    }
