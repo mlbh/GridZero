@@ -48,12 +48,9 @@ class LSTMPredictor:
         scaled_pred = self.model.predict(lstm_in, verbose=0)
 
         # INVERSE TRANSFORM & CLEAN
-        # Convert 0-1 decimals back into actual Megawatts
         real_pred = self.y_scaler.inverse_transform(scaled_pred)
-
         real_pred = np.maximum(real_pred, 0)
 
-        # Returns a 2D numpy array (1, 10)
         return real_pred
 
 
@@ -61,18 +58,21 @@ class LSTMPredictor:
 #to be integrated into a different file for iterative looping
 def predict_24h_generation(target_date, full_df, lstm_predictor):
     # 1. Setup
-    target_dt = pd.to_datetime(target_date)
-    # Use datetime instead of time if that's what preproc returns
+
+    full_df = full_df.reset_index(drop=True)
     time_col = 'datetime' if 'datetime' in full_df.columns else 'time'
-    target_idx = full_df.index[full_df[time_col] == target_dt][0]
+
+    target_dt = pd.to_datetime(target_date)
+
+    try:
+        target_idx = full_df.index[full_df[time_col] == target_dt][0]
+    except IndexError:
+        raise ValueError(f"Date {target_date} not found in dataset.")
 
     # Initial window: 7 days of history
     current_window = full_df.iloc[target_idx - 336 : target_idx].copy()
 
     predictions = []
-
-    # Define generation columns based on your feature_order
-    # We exclude weather and time features
     gen_features = [
         'biomass', 'fossil_gas', 'fossil_hard_coal', 'hydro_pumped_storage',
         'hydro_run_of_river_and_poundage', 'nuclear', 'other', 'solar',
@@ -82,12 +82,11 @@ def predict_24h_generation(target_date, full_df, lstm_predictor):
     # 2. Iterative Loop: 48 half-hour slots
     for i in range(48):
         # Predict 1 step ahead
-        single_pred = lstm_predictor.predict(current_window)
-
-        # single_pred shape is likely (1, 10) if you predict all fuel types
-        # or (1, 1) if just total. Assuming it returns the fuel type array:
+        single_pred = lstm_predictor.predict(current_window).copy()
         pred_values = single_pred[0]
-        predictions.append(pred_values)
+
+
+        predictions.append(pred_values.tolist())
 
         # 3. Update Window
         # Get the forecast weather for the slot we just predicted
@@ -96,11 +95,15 @@ def predict_24h_generation(target_date, full_df, lstm_predictor):
         # Update the generation columns with our new predictions
         # This aligns the predicted values to the correct feature names
         for idx, col in enumerate(gen_features):
-            next_step_row[col] = pred_values[idx]
+            next_step_row[col] = float(pred_values[idx])
 
         # Slide the window: Remove oldest, append newest
         # Convert row to DataFrame to match current_window structure
-        new_row_df = pd.DataFrame([next_step_row])
+        new_row_df = pd.DataFrame([next_step_row])[current_window.columns]
+
+        # if new_row_df.isnull().values.any():
+        #     print("Warning: Column mismatch")
+
         current_window = pd.concat([current_window.iloc[1:], new_row_df], ignore_index=True)
 
     # 4. Total Output (Move OUTSIDE the loop)

@@ -47,7 +47,9 @@ async def lifespan(app: FastAPI):
 
     print("Cleaning and feature engineering...")
     app.state.master_df = preproc(master_df)
-
+    processed_df = preproc(master_df)
+    app.state.master_df = processed_df
+    processed_df.to_csv("master_df_debug1.csv", index=False)
     app.state.lstm_predictor = LSTMPredictor(
         model_store.lstm,
         x_scaler=model_store.x_scaler,
@@ -58,6 +60,9 @@ async def lifespan(app: FastAPI):
 
     carbon_data = fetch_carbon_history()
     print("Startup complete. Master context is ready for predictions.")
+
+    app.state.carbon_yesterday = carbon_data["yesterday"]
+    app.state.carbon_year_ago_ribbon = carbon_data["year_ago"]
 
     yield
 
@@ -220,30 +225,25 @@ def predict(data: PredictionRequest, request: Request):
 
 
 
-    #making lags
-    lags_48 = []
-    lags_336 = []
-    lags_17520 = []
+    # 1. Access the pre-loaded API data from app state
+    # These are the lists you fetched in lifespan
+    carbon_yesterday = request.app.state.carbon_yesterday # 48 items
+    carbon_year_ago = request.app.state.carbon_year_ago_ribbon # 672 items (14 days)
 
-    for i in range(48):
-        current_step_idx = target_idx + i
+    # 2. Get the "Year Ago" slice for the specific target date
+    # If your target_date is 'today', we use the first 48 slots of the ribbon
+    # (Or use day_idx if you are looping through 14 days)
+    day_idx = 0 # Assuming we are predicting the first day
+    year_ago_slice = carbon_year_ago[day_idx*48 : (day_idx+1)*48]
 
-        #48
-        val_48 = master_df.loc[current_step_idx - 48, 'carbon_intensity_gco2_kwh']
-        lags_48.append(val_48)
+    # 3. Assign directly to the DataFrame (No loop needed!)
+    day_features['carbon_lag_48'] = carbon_yesterday
+    day_features['carbon_lag_336'] = 0.0 # placeholder
+    day_features['carbon_lag_17520'] = year_ago_slice
 
-        val_336 = master_df.loc[current_step_idx - 336, 'carbon_intensity_gco2_kwh']
-        lags_336.append(val_336)
-
-        val_17520 = master_df.loc[current_step_idx - 17520, 'carbon_intensity_gco2_kwh']
-        lags_17520.append(val_17520)
-
-    day_features['carbon_lag_48'] = lags_48
-    day_features['carbon_lag_336'] = 0 #placeholder - nothing to lag for the week
-    day_features['carbon_lag_17520'] = lags_17520
-
+    # 4. Fix the total output name
     day_features['totaloutput_mw'] = daily_preds.sum(axis=1)
-    
+
 
     xgb_required_features = [
         'temperature_2m_c', 'wind_speed_100m_ms', 'wind_gusts_10m_ms',
@@ -268,8 +268,13 @@ def predict(data: PredictionRequest, request: Request):
             "avg_carbon_intensity": round(float(np.mean(carbon_intensities)), 2)
         },
         "forecast": {
-            "times": master_df[time_col].iloc[target_idx : target_idx + 48].dt.strftime('%H:%M').tolist(),
-            "generation_mix_mw": daily_preds.tolist(), # List of 48 lists (each containing 10 fuel values)
-            "carbon_intensity_gco2_kwh": carbon_intensities.flatten().tolist()
+            "slots": [
+                {
+                    "time": master_df[time_col].iloc[target_idx + i].strftime('%H:%M'),
+                    "generation_mix_mw": dict(zip(gen_names, daily_preds[i].tolist())),
+                    "carbon_intensity_gco2_kwh": float(carbon_intensities.flatten()[i])
+                }
+                for i in range(48)
+            ]
         }
     }
