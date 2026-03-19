@@ -69,6 +69,8 @@ def predict_24h_generation(target_date, full_df, lstm_predictor):
     except IndexError:
         raise ValueError(f"Date {target_date} not found in dataset.")
 
+    print(full_df.iloc[target_idx : target_idx + 5][['time', 'fossil_gas', 'nuclear', 'wind_offshore']])
+
     # Initial window: 7 days of history
     current_window = full_df.iloc[target_idx - 336 : target_idx].copy()
 
@@ -101,8 +103,12 @@ def predict_24h_generation(target_date, full_df, lstm_predictor):
         # Convert row to DataFrame to match current_window structure
         new_row_df = pd.DataFrame([next_step_row])[current_window.columns]
 
-        # if new_row_df.isnull().values.any():
-        #     print("Warning: Column mismatch")
+        if i == 0:
+            print(current_window.iloc[-1])
+
+        if new_row_df.isnull().values.any():
+            null_cols = new_row_df.columns[new_row_df.isnull().any()].tolist()
+            print(f"Warning: NaN in columns: {null_cols}")
 
         current_window = pd.concat([current_window.iloc[1:], new_row_df], ignore_index=True)
 
