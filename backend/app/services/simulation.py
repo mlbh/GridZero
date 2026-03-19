@@ -57,3 +57,5 @@ def simulate_grid(
         "surplus": surplus_data,
         "battery": battery_data
     }
+
+
