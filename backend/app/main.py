@@ -77,7 +77,7 @@ async def root():
 
 @app.get("/predict_lstm")
 # JUST LSTM
-def predict_lstm(days = 14):
+def predict_lstm(days = 7):
     days = int(days)
     feature_cols = [
         # weather
@@ -121,7 +121,7 @@ def predict_lstm(days = 14):
         'wind_offshore',
         'wind_onshore'
     ]
-
+    days = int(days)
     model = keras.models.load_model("gs://grid_zero_bucket/lstm_model1.keras")
 
 
