@@ -55,8 +55,8 @@ async def lifespan(app: FastAPI):
         x_scaler=model_store.x_scaler,
         y_scaler=model_store.y_scaler
     )
-    app.state.xgb_predictor = XGBPredictor(model_store.xgb)
-
+    app.state.xgb_predictor = model_store.xgb
+    # app.state.xgb_model = model_store.xgb_model
 
     carbon_data = fetch_carbon_history()
     print("Startup complete. Master context is ready for predictions.")
@@ -78,7 +78,7 @@ async def root():
 @app.get("/predict_lstm")
 # JUST LSTM
 def predict_lstm(days = 7):
-
+    days = int(days)
     feature_cols = [
         # weather
         'temperature_2m_c',
@@ -141,7 +141,7 @@ def predict_lstm(days = 7):
 
         seq = merge_weather_elexon(weather_seq, elexon_df[-336:].reset_index(drop=True))
         # print(f'sending data with starttime {weather_df.loc[335+i, 'time']}| to model')
-        result = y_scaler.inverse_transform(model.predict(make_lstm_input(preproc(seq))))
+        result = y_scaler.inverse_transform(model.predict_on_batch(make_lstm_input(preproc(seq))))
 
         result_df = pd.DataFrame(result, columns=['Biomass', 'Fossil Gas', 'Fossil Hard coal',
             'Hydro Pumped Storage', 'Hydro Run-of-river and poundage', 'Nuclear',
@@ -160,56 +160,63 @@ def predict_lstm(days = 7):
     predictions = elexon_df[336:]
     results = pd.concat((weather_concat[336:], predictions), axis=1).dropna()
     print(len(results))
+    app.state.lstm_prediction_df = results
     return results
 
 
 
 
-@app.post("/predict")
-def predict(data: PredictionRequest, request: Request):
+# @app.post("/predict")
+# def predict(data: PredictionRequest, request: Request):
     # 1. Pull assets from app state
     master_df = request.app.state.master_df
     lstm_predictor = request.app.state.lstm_predictor
     xgb_predictor = request.app.state.xgb_predictor
+    lstm_prediction_results = app.state.lstm_prediction_df
 
-    # 2. Align the Target Date
-    # Ensure we are looking for the exact start of the day (00:00)
-    target_dt = pd.to_datetime(data.target_date).replace(hour=0, minute=0, second=0)
 
-    # Identify the time column name used in your preproc
+
+
+
+    # # 2. Align the Target Date
+    # # Ensure we are looking for the exact start of the day (00:00)
+    # target_dt = pd.to_datetime(data.target_date).replace(hour=0, minute=0, second=0)
+
+    # # Identify the time column name used in your preproc
     time_col = 'datetime' if 'datetime' in master_df.columns else 'time'
 
-    try:
-        # Find the integer index for the start of the requested day
-        target_idx = master_df.index[master_df[time_col] == target_dt][0]
+    # try:
+    #     # Find the integer index for the start of the requested day
+    #     target_idx = master_df.index[master_df[time_col] == target_dt][0]
 
-        # Check if we have the 7-day lookback (336 slots) available
-        if target_idx < 336:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Target date {data.target_date} is too early. Need 7 days of history."
-            )
+    #     # Check if we have the 7-day lookback (336 slots) available
+    #     if target_idx < 336:
+    #         raise HTTPException(
+    #             status_code=400,
+    #             detail=f"Target date {data.target_date} is too early. Need 7 days of history."
+    #         )
 
-    except IndexError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Target date {data.target_date} not found in the 21-day master context."
-        )
+    # except IndexError:
+    #     raise HTTPException(
+    #         status_code=400,
+    #         detail=f"Target date {data.target_date} not found in the 21-day master context."
+    #     )
 
-    # 3. Run the Iterative Generation Forecast (48 slots)
-    # This uses the helper function we refined in the previous step
-    try:
-        # daily_preds shape: (48, 10) -> 48 time slots, 10 fuel types
-        daily_preds, total_mwh = predict_24h_generation(
-            target_date=target_dt,
-            full_df=master_df,
-            lstm_predictor=lstm_predictor
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LSTM Iteration Error: {str(e)}")
-
+    # # 3. Run the Iterative Generation Forecast (48 slots)
+    # # This uses the helper function we refined in the previous step
+    # try:
+    #     # daily_preds shape: (48, 10) -> 48 time slots, 10 fuel types
+    #     daily_preds, total_mwh = predict_24h_generation(
+    #         target_date=target_dt,
+    #         full_df=master_df,
+    #         lstm_predictor=lstm_predictor
+    #     )
+    # except Exception as e:
+    #     raise HTTPException(status_code=500, detail=f"LSTM Iteration Error: {str(e)}")
+    master_df = preproc(lstm_prediction_results)
     # 4. Prepare features for XGBoost (Carbon Intensity)
     # We take the weather/time features for that specific day
+    target_idx = 0
     day_features = master_df.iloc[target_idx : target_idx + 48].copy()
 
     # Add the LSTM predictions into the feature set for XGBoost to use
@@ -220,9 +227,8 @@ def predict(data: PredictionRequest, request: Request):
         'wind_offshore', 'wind_onshore'
     ]
 
-    for i, col in enumerate(gen_names):
-        day_features[col] = daily_preds[:, i]
-
+    # for i, col in enumerate(gen_names):
+    #     day_features[col] = daily_preds[:, i]
 
 
     # 1. Access the pre-loaded API data from app state
@@ -234,7 +240,9 @@ def predict(data: PredictionRequest, request: Request):
     # If your target_date is 'today', we use the first 48 slots of the ribbon
     # (Or use day_idx if you are looping through 14 days)
     day_idx = 0 # Assuming we are predicting the first day
-    year_ago_slice = carbon_year_ago[day_idx*48 : (day_idx+1)*48]
+    n_rows = len(master_df)
+    # year_ago_slice = carbon_year_ago[day_idx*48 : (day_idx+1)*48]
+    year_ago_slice = carbon_year_ago[-n_rows : (day_idx+1)*48]
 
     # 3. Assign directly to the DataFrame (No loop needed!)
     day_features['carbon_lag_48'] = carbon_yesterday
@@ -242,7 +250,7 @@ def predict(data: PredictionRequest, request: Request):
     day_features['carbon_lag_17520'] = year_ago_slice
 
     # 4. Fix the total output name
-    day_features['totaloutput_mw'] = daily_preds.sum(axis=1)
+    # day_features['totaloutput_mw'] = daily_preds.sum(axis=1)
 
 
     xgb_required_features = [
@@ -264,7 +272,7 @@ def predict(data: PredictionRequest, request: Request):
     return {
         "target_date": data.target_date,
         "summary": {
-            "total_generation_mwh": round(float(total_mwh), 2),
+            # "total_generation_mwh": round(float(total_mwh), 2),
             "avg_carbon_intensity": round(float(np.mean(carbon_intensities)), 2)
         },
         "forecast": {
@@ -278,3 +286,32 @@ def predict(data: PredictionRequest, request: Request):
             ]
         }
     }
+
+import json
+import xgboost as xgb
+from google.cloud import storage
+
+
+@app.get("/predict_xgb")
+def predict_xgb():
+    lstm_prediction_results = app.state.lstm_prediction_df
+    # master_df = app.state.master_df
+    #target date is now
+    #preprocess lstm_df
+
+    lstm_df = preproc(lstm_prediction_results)
+    time_col = lstm_df['time']
+    # print("preproc", lstm_df.head(), lstm_df.tail())
+    # print(lstm_df.columns)
+    xgb_model = app.state.xgb_predictor
+    lstm_df = lstm_df.select_dtypes(include="number").drop(columns="fossil_oil").rename(columns={'total_output_mw': 'totaloutput_mw'})
+    lstm_df = lstm_df[['temperature_2m_c', 'wind_speed_100m_ms', 'wind_gusts_10m_ms', 'cloud_cover_pct', 'shortwave_radiation_wm2', 'direct_radiation_wm2', 'diffuse_radiation_wm2', 'pressure_msl_hpa', 'precipitation_mm', 'biomass', 'fossil_gas', 'fossil_hard_coal', 'hydro_pumped_storage', 'hydro_run_of_river_and_poundage', 'nuclear', 'other', 'solar', 'wind_offshore', 'wind_onshore', 'totaloutput_mw', 'hour_sin', 'hour_cos', 'dow_sin', 'dow_cos', 'doy_sin', 'doy_cos']]
+    xgb_input = xgb.DMatrix(lstm_df)
+
+    xgb_results = xgb_model.predict(xgb_input)
+    print(type(xgb_results))
+    return pd.DataFrame({'time': time_col, 'carbon intensity':xgb_results.tolist()})
+    # day_features = lstm_prediction_results.iloc[target_idx : target_idx + 48].copy()
+
+    # #TODO total output calc
+    # print(test_df.head(), test_df.tail())
