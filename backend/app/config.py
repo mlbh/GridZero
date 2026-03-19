@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 GCS_BUCKET = os.getenv("MODEL_BUCKET")
+MODEL_BUCKET = os.getenv("MODEL_BUCKET")
+
 
 XGB_MODEL_PATH = os.getenv("XGB_MODEL_PATH")
 LSTM_MODEL_PATH = os.getenv("LSTM_MODEL_PATH")

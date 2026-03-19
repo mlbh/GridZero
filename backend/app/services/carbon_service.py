@@ -34,7 +34,7 @@ def fetch_carbon_history():
 CARBON_API = "https://api.carbonintensity.org.uk"
 
 
-def fetch_carbon_history(forecast_timestamps: pd.DatetimeIndex) -> pd.Series:
+def fetch_carbon_history1(forecast_timestamps: pd.DatetimeIndex) -> pd.Series:
     """
     Fetches real historical carbon intensity for lag feature lookups.
 
